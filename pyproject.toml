@@ -1,0 +1,53 @@
+[project]
+name = "scpi-mcp"
+version = "0.1.0"
+description = "Oscilloscope expertise for agents over MCP — a SCPI/VISA instrument interface for the Model Context Protocol."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "armchairdeity" }]
+keywords = ["mcp", "scpi", "visa", "oscilloscope", "rigol", "instrumentation"]
+
+dependencies = [
+    # FastMCP ships inside the official MCP Python SDK.
+    "mcp[cli]>=1.2.0",
+    # Transport layer (VISA resource resolution + I/O). Imported lazily; no live
+    # calls happen in Part 1 — tests monkeypatch the resource manager.
+    "pyvisa>=1.13",
+    # Mock waveform synthesis + measurement math.
+    "numpy>=1.24",
+    # XLSX export.
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+# The forked, *complete* rigol-ds1000z library is delivered in Part 2 (bench
+# task). Part 1 is built against the assumption that it exists, but the mock
+# backend is fully independent of it, so it stays optional here and the wrapper
+# guards its import. Swap the placeholder for the fork's git URL in Part 2.
+hardware = [
+    # TODO: Part 2 — point at the completed fork, e.g.
+    # "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git",
+    "rigol-ds1000z>=0.2",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+scpi-mcp = "scpi_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scpi_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.uv]
+# Keep Part 1 installable with zero hardware: the `hardware` extra (the Part 2
+# library) is opt-in and never required for the mock-tested scaffold.
