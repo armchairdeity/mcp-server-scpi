@@ -13,9 +13,9 @@ Adding a new instrument = implement this interface in a new file. No changes to
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..capabilities import Capabilities
@@ -104,7 +104,7 @@ class Instrument(abc.ABC):
     """
 
     # Backends set this; the capabilities module reads it. See capabilities.py.
-    capabilities: "Capabilities"
+    capabilities: Capabilities
 
     # -- identity ----------------------------------------------------------
     @abc.abstractmethod
@@ -126,7 +126,7 @@ class Instrument(abc.ABC):
         """Capture the on-screen (≈1200-point) waveform for ``channel``."""
 
     @abc.abstractmethod
-    def capture_memory(self, channel: int, points: Optional[int] = None) -> Waveform:
+    def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
         """Capture the deep-memory waveform for ``channel``.
 
         ``points`` of ``None`` means "as many as the current memory depth".
@@ -138,10 +138,10 @@ class Instrument(abc.ABC):
         self,
         channel: int,
         *,
-        enabled: Optional[bool] = None,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        coupling: Optional[str] = None,
+        enabled: bool | None = None,
+        scale: float | None = None,
+        offset: float | None = None,
+        coupling: str | None = None,
     ) -> None:
         """Non-destructive vertical configuration for one channel."""
 
@@ -149,8 +149,8 @@ class Instrument(abc.ABC):
     def set_timebase(
         self,
         *,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
+        scale: float | None = None,
+        offset: float | None = None,
     ) -> None:
         """Horizontal (time base) configuration."""
 
@@ -179,13 +179,13 @@ class Instrument(abc.ABC):
     def set_acquisition(
         self,
         *,
-        acq_type: Optional[str] = None,
-        memory_depth: Optional[int] = None,
+        acq_type: str | None = None,
+        memory_depth: int | None = None,
     ) -> None:
         """Acquisition type (normal/average/peak) and memory depth."""
 
     # -- settle ------------------------------------------------------------
-    def settle(self, seconds: float) -> None:
+    def settle(self, seconds: float) -> None:  # noqa: B027 - intentional no-op default
         """Wait for the instrument to settle after a configuration change.
 
         Real backends and the underlying library insert sleeps on some commands

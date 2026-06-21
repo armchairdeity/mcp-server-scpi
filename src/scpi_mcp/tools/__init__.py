@@ -20,9 +20,10 @@ Each module exposes:
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from ..config import PermissionError, Session
+from ..config import PermissionDenied, Session
 
 
 def refusal(message: str) -> dict[str, Any]:
@@ -33,7 +34,7 @@ def refusal(message: str) -> dict[str, Any]:
 def guarded(session: Session, impl: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap an ``*_impl`` as a FastMCP-facing callable.
 
-    Binds the session and converts :class:`PermissionError` (tier/confirmation
+    Binds the session and converts :class:`PermissionDenied` (tier/confirmation
     denials) into a refusal payload instead of an exception, so the model sees a
     clean "the server refused" result.
     """
@@ -41,7 +42,7 @@ def guarded(session: Session, impl: Callable[..., Any]) -> Callable[..., Any]:
     def tool(*args: Any, **kwargs: Any) -> Any:
         try:
             return impl(session, *args, **kwargs)
-        except PermissionError as exc:
+        except PermissionDenied as exc:
             return refusal(str(exc))
 
     tool.__name__ = getattr(impl, "__name__", "tool")

@@ -5,11 +5,16 @@ layer (instruments, tools) sees pyvisa, broadcast packets, or SCPI — they get 
 resource string and, from the instrument layer, a connected backend.
 """
 
-from .connect import ConnectionError, autoconnect, connect_to, resolve_resource
+from .connect import (
+    InstrumentConnectionError,
+    autoconnect,
+    connect_to,
+    resolve_resource,
+)
 from .discover import DiscoveryResult, cascade, discover_lan, discover_usb
 
 __all__ = [
-    "ConnectionError",
+    "InstrumentConnectionError",
     "DiscoveryResult",
     "autoconnect",
     "cascade",

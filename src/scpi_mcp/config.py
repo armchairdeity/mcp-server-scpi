@@ -16,9 +16,10 @@ Tiers (monotonically increasing capability):
 from __future__ import annotations
 
 import functools
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:  # avoid importing the instrument layer at module load
     from .instruments.base import Instrument
@@ -32,7 +33,7 @@ class PermissionTier(IntEnum):
     FULL = 2
 
     @classmethod
-    def from_str(cls, value: str) -> "PermissionTier":
+    def from_str(cls, value: str) -> PermissionTier:
         try:
             return cls[value.strip().upper()]
         except KeyError as exc:  # pragma: no cover - defensive
@@ -42,7 +43,7 @@ class PermissionTier(IntEnum):
             ) from exc
 
 
-class PermissionError(RuntimeError):
+class PermissionDenied(RuntimeError):
     """Raised when a tool is invoked beyond the session's granted tier, or a
     confirmation-required op is invoked without explicit confirmation.
 
@@ -62,13 +63,13 @@ class Session:
     """
 
     tier: PermissionTier = PermissionTier.READ_ONLY
-    instrument: Optional["Instrument"] = None
+    instrument: Instrument | None = None
     # Resolved VISA resource string for the active connection, if any. Owned by
     # the transport layer; cached here purely for reporting/reconnect.
-    resource: Optional[str] = None
+    resource: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def require_instrument(self) -> "Instrument":
+    def require_instrument(self) -> Instrument:
         if self.instrument is None:
             raise RuntimeError(
                 "no instrument connected — run the autoconnect/self_config tool first"
@@ -90,20 +91,20 @@ def requires(tier: PermissionTier, *, confirmation: bool = False) -> Callable[[F
     ``confirm=True``.
 
     Enforcement happens here, before the body runs. A denied call raises
-    :class:`PermissionError`; tools translate that into a structured refusal.
+    :class:`PermissionDenied`; tools translate that into a structured refusal.
     """
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(session: Session, *args: Any, **kwargs: Any) -> Any:
             if session.tier < tier:
-                raise PermissionError(
+                raise PermissionDenied(
                     f"'{func.__name__}' requires the '{tier.name.lower()}' "
                     f"permission tier, but this session is "
                     f"'{session.tier.name.lower()}'. Refusing."
                 )
             if confirmation and not kwargs.get("confirm", False):
-                raise PermissionError(
+                raise PermissionDenied(
                     f"'{func.__name__}' is a disruptive operation and requires "
                     f"explicit confirmation. Re-invoke with confirm=true."
                 )

@@ -7,7 +7,7 @@ flooding the model, with an opt-in to include the full sample array.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..config import PermissionTier, Session, requires
 from ..instruments.base import Waveform
@@ -42,7 +42,7 @@ def capture_screen_impl(
 def capture_memory_impl(
     session: Session,
     channel: int,
-    points: Optional[int] = None,
+    points: int | None = None,
     *,
     include_samples: bool = False,
 ) -> dict[str, Any]:

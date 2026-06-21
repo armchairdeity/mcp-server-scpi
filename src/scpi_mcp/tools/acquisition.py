@@ -7,7 +7,7 @@ caller passes ``confirm=True``. Enforcement is in :func:`scpi_mcp.config.require
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..config import PermissionTier, Session, requires
 from . import guarded
@@ -45,8 +45,8 @@ def force_trigger_impl(session: Session, *, confirm: bool = False) -> dict[str, 
 def set_acquisition_impl(
     session: Session,
     *,
-    acq_type: Optional[str] = None,
-    memory_depth: Optional[int] = None,
+    acq_type: str | None = None,
+    memory_depth: int | None = None,
     confirm: bool = False,
 ) -> dict[str, Any]:
     """Set acquisition type and/or memory depth (disruptive)."""

@@ -12,7 +12,7 @@ resource string and never sees discovery.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from ..instruments.base import Instrument
 from ..instruments.mock import MockInstrument
@@ -23,15 +23,15 @@ from .discover import DiscoveryResult, cascade, discover_manual
 BackendFactory = Callable[[str], Instrument]
 
 
-class ConnectionError(RuntimeError):
+class InstrumentConnectionError(RuntimeError):
     """Raised when no instrument could be resolved/connected."""
 
 
 # Module-level cache of the last resolved resource string.
-_cached_resource: Optional[str] = None
+_cached_resource: str | None = None
 
 
-def cached_resource() -> Optional[str]:
+def cached_resource() -> str | None:
     return _cached_resource
 
 
@@ -40,24 +40,24 @@ def clear_cache() -> None:
     _cached_resource = None
 
 
-def resolve_resource(host: Optional[str] = None, *, use_cache: bool = True) -> str:
+def resolve_resource(host: str | None = None, *, use_cache: bool = True) -> str:
     """Resolve a VISA resource string via cache → discovery cascade.
 
-    Raises :class:`ConnectionError` if nothing is found (the connection tool
+    Raises :class:`InstrumentConnectionError` if nothing is found (the connection tool
     turns that into an IP prompt).
     """
     global _cached_resource
     if use_cache and _cached_resource is not None:
         return _cached_resource
 
-    result: Optional[DiscoveryResult]
+    result: DiscoveryResult | None
     if host:
         result = discover_manual(host) or cascade(host=host)
     else:
         result = cascade()
 
     if result is None:
-        raise ConnectionError(
+        raise InstrumentConnectionError(
             "no instrument found via USB or LAN. Provide an IP/hostname to "
             "build a TCPIP::<ip>::INSTR resource."
         )
@@ -90,7 +90,7 @@ def connect_to(
     else:
         result = discover_manual(resource_or_ip)
         if result is None:
-            raise ConnectionError(
+            raise InstrumentConnectionError(
                 f"could not reach an instrument at {resource_or_ip!r}."
             )
         resource = result.resource
@@ -99,7 +99,7 @@ def connect_to(
 
 
 def autoconnect(
-    host: Optional[str] = None,
+    host: str | None = None,
     *,
     backend_factory: BackendFactory = _default_backend_factory,
 ) -> Instrument:

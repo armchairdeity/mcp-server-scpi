@@ -14,11 +14,10 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Union
 
 from ..instruments.base import Waveform
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 def to_json(waveform: Waveform, path: PathLike) -> Path:
@@ -42,7 +41,7 @@ def to_csv(waveform: Waveform, path: PathLike) -> Path:
     with out.open("w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["time_s", "volts"])
-        writer.writerows(zip(waveform.time, waveform.volts))
+        writer.writerows(zip(waveform.time, waveform.volts, strict=True))
     return out
 
 
@@ -59,7 +58,7 @@ def to_xlsx(waveform: Waveform, path: PathLike, *, chart: bool = False) -> Path:
     ws = wb.active
     ws.title = f"CH{waveform.channel}"
     ws.append(["time_s", "volts"])
-    for t, v in zip(waveform.time, waveform.volts):
+    for t, v in zip(waveform.time, waveform.volts, strict=True):
         ws.append([t, v])
 
     if chart and waveform.n_points:

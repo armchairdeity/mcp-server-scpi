@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scpi_mcp.config import PermissionError, Session
+from scpi_mcp.config import PermissionDenied, Session
 from scpi_mcp.tools import characterize
 
 
@@ -29,5 +29,5 @@ def test_characterize_validates_channel(read_config_session: Session) -> None:
 
 
 def test_characterize_requires_read_config(read_only_session: Session) -> None:
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionDenied):
         characterize.characterize_signal_impl(read_only_session, 1)

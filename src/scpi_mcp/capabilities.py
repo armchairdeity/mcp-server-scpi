@@ -44,7 +44,7 @@ DS1104Z_BASE = Capabilities(
 )
 
 
-def detect_capabilities(instrument: "Instrument") -> Capabilities:
+def detect_capabilities(instrument: Instrument) -> Capabilities:
     """Return the instrument's capabilities.
 
     Part 1 stub: trusts whatever profile the backend advertises (the mock and

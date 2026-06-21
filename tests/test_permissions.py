@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scpi_mcp.config import PermissionError, PermissionTier, Session
+from scpi_mcp.config import PermissionDenied, PermissionTier, Session
 from scpi_mcp.tools import acquisition, config_tools, measure
 
 
@@ -14,7 +14,7 @@ def test_read_only_can_measure(read_only_session: Session) -> None:
 
 
 def test_read_only_cannot_configure(read_only_session: Session) -> None:
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionDenied):
         config_tools.set_timebase_impl(read_only_session, scale=1e-3)
 
 
@@ -24,13 +24,13 @@ def test_read_config_can_configure(read_config_session: Session) -> None:
 
 
 def test_read_config_cannot_run_acquisition(read_config_session: Session) -> None:
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionDenied):
         acquisition.run_impl(read_config_session, confirm=True)
 
 
 def test_full_requires_confirmation(full_session: Session) -> None:
     # Right tier, but no confirmation → refused.
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionDenied):
         acquisition.run_impl(full_session)
 
 

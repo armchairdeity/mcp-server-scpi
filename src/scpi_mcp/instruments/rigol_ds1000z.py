@@ -19,8 +19,6 @@ so discovery stays entirely in our transport layer.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..capabilities import DS1104Z_BASE, Capabilities
 from .base import (
     Instrument,
@@ -92,20 +90,20 @@ class RigolDS1000Z(Instrument):
     def capture_screen(self, channel: int) -> Waveform:
         # :WAVeform is implemented in the upstream library; mapping its return
         # onto our Waveform type is Part 3 wiring (needs a live read to verify).
-        raise NotImplementedError(f"capture_screen() — wiring deferred to Part 3")
+        raise NotImplementedError("capture_screen() — wiring deferred to Part 3")
 
-    def capture_memory(self, channel: int, points: Optional[int] = None) -> Waveform:
-        raise NotImplementedError(f"capture_memory() — wiring deferred to Part 3")
+    def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
+        raise NotImplementedError("capture_memory() — wiring deferred to Part 3")
 
     # -- channel / timebase / trigger -------------------------------------
     def set_channel(
         self,
         channel: int,
         *,
-        enabled: Optional[bool] = None,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        coupling: Optional[str] = None,
+        enabled: bool | None = None,
+        scale: float | None = None,
+        offset: float | None = None,
+        coupling: str | None = None,
     ) -> None:
         # :CHANnel exists upstream; wiring/verification is Part 3.
         raise NotImplementedError("set_channel() — wiring deferred to Part 3")
@@ -113,8 +111,8 @@ class RigolDS1000Z(Instrument):
     def set_timebase(
         self,
         *,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
+        scale: float | None = None,
+        offset: float | None = None,
     ) -> None:
         # :TIMebase exists upstream; wiring/verification is Part 3.
         raise NotImplementedError("set_timebase() — wiring deferred to Part 3")
@@ -139,8 +137,8 @@ class RigolDS1000Z(Instrument):
     def set_acquisition(
         self,
         *,
-        acq_type: Optional[str] = None,
-        memory_depth: Optional[int] = None,
+        acq_type: str | None = None,
+        memory_depth: int | None = None,
     ) -> None:
         # The :ACQuire subsystem is not yet implemented in the library.
         raise NotImplementedError(f"set_acquisition() — {_PART2}")

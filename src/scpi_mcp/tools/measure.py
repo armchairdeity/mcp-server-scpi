@@ -6,7 +6,7 @@ Vpp, Vrms, frequency, period, duty, rise/fall — requested by vendor-neutral
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..config import PermissionTier, Session, requires
 from ..instruments.base import MeasurementKind
@@ -42,7 +42,7 @@ def measure_impl(session: Session, channel: int, kind: str) -> dict[str, Any]:
 
 @requires(PermissionTier.READ_ONLY)
 def snapshot_impl(
-    session: Session, channel: int, kinds: Optional[list[str]] = None
+    session: Session, channel: int, kinds: list[str] | None = None
 ) -> dict[str, Any]:
     """Take a snapshot of several measurements at once for one channel."""
     inst = session.require_instrument()

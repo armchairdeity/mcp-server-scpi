@@ -12,8 +12,7 @@ return interface-shaped data.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from ..capabilities import DS1104Z_BASE, Capabilities
 from .base import (
@@ -44,11 +43,12 @@ class MockInstrument(Instrument):
     def __init__(self, capabilities: Capabilities = DS1104Z_BASE) -> None:
         self.capabilities = capabilities
         self._channels: dict[int, _ChannelModel] = {
-            ch: _ChannelModel(frequency=1_000.0 * ch) for ch in capabilities.channel_ids()
+            ch: _ChannelModel(frequency=1_000.0 * ch)
+            for ch in capabilities.channel_ids()
         }
         self._timebase_scale = 1e-3  # s/div
         self._timebase_offset = 0.0
-        self._trigger: Optional[TriggerConfig] = None
+        self._trigger: TriggerConfig | None = None
         self._acq_type = "normal"
         self._memory_depth = 12_000
         self._running = True
@@ -121,7 +121,7 @@ class MockInstrument(Instrument):
     def capture_screen(self, channel: int) -> Waveform:
         return self._synthesize(channel, n_points=1200)
 
-    def capture_memory(self, channel: int, points: Optional[int] = None) -> Waveform:
+    def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
         n = points or self._memory_depth
         return self._synthesize(channel, n_points=n)
 
@@ -130,10 +130,10 @@ class MockInstrument(Instrument):
         self,
         channel: int,
         *,
-        enabled: Optional[bool] = None,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        coupling: Optional[str] = None,
+        enabled: bool | None = None,
+        scale: float | None = None,
+        offset: float | None = None,
+        coupling: str | None = None,
     ) -> None:
         model = self._require_channel(channel)
         if enabled is not None:
@@ -148,8 +148,8 @@ class MockInstrument(Instrument):
     def set_timebase(
         self,
         *,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
+        scale: float | None = None,
+        offset: float | None = None,
     ) -> None:
         if scale is not None:
             self._timebase_scale = scale
@@ -176,8 +176,8 @@ class MockInstrument(Instrument):
     def set_acquisition(
         self,
         *,
-        acq_type: Optional[str] = None,
-        memory_depth: Optional[int] = None,
+        acq_type: str | None = None,
+        memory_depth: int | None = None,
     ) -> None:
         if acq_type is not None:
             self._acq_type = acq_type

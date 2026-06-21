@@ -7,16 +7,16 @@ SCPI or a specific vendor.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
+from .. import transport
 from ..capabilities import detect_capabilities
 from ..config import PermissionTier, Session, requires
-from .. import transport
 from . import guarded
 
 
 @requires(PermissionTier.READ_ONLY)
-def self_config_impl(session: Session, host: Optional[str] = None) -> dict[str, Any]:
+def self_config_impl(session: Session, host: str | None = None) -> dict[str, Any]:
     """Discover/connect an instrument and attach it to the session.
 
     Runs the transport cascade (USB → LAN → manual host). In Part 1 the backend

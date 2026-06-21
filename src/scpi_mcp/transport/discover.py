@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 # Models we recognize as "ours". DS1054Z reports as DS1104Z once unlocked.
 _RIGOL_IDN_RE = re.compile(r"RIGOL.*DS1\d{3}Z", re.IGNORECASE)
@@ -40,7 +39,7 @@ class DiscoveryResult:
 
     resource: str
     source: DiscoverySource
-    idn: Optional[str] = None
+    idn: str | None = None
     # True only for sources we trust; LAN broadcast is best-effort.
     reliable: bool = True
 
@@ -59,7 +58,7 @@ def _resource_manager():
     return pyvisa.ResourceManager()
 
 
-def _probe_idn(resource: str, timeout_ms: int = 2000) -> Optional[str]:
+def _probe_idn(resource: str, timeout_ms: int = 2000) -> str | None:
     """Open ``resource``, query ``*IDN?``, return the response (or None).
 
     The single point where transport actually touches an instrument to identify
@@ -80,7 +79,7 @@ def _probe_idn(resource: str, timeout_ms: int = 2000) -> Optional[str]:
 # --- the three discovery stages ---------------------------------------------
 
 
-def discover_usb() -> Optional[DiscoveryResult]:
+def discover_usb() -> DiscoveryResult | None:
     """Enumerate USB resources and return the first Rigol DS1000Z found."""
     rm = _resource_manager()
     try:
@@ -101,7 +100,7 @@ def discover_usb() -> Optional[DiscoveryResult]:
     return None
 
 
-def discover_lan(timeout: float = LAN_DISCOVERY_TIMEOUT) -> Optional[DiscoveryResult]:
+def discover_lan(timeout: float = LAN_DISCOVERY_TIMEOUT) -> DiscoveryResult | None:
     """Best-effort LAN auto-discovery via LXI/VXI-11 broadcast.
 
     Returns ``None`` if nothing answers within ``timeout``. This is explicitly
@@ -114,7 +113,7 @@ def discover_lan(timeout: float = LAN_DISCOVERY_TIMEOUT) -> Optional[DiscoveryRe
     return None
 
 
-def discover_manual(host: str) -> Optional[DiscoveryResult]:
+def discover_manual(host: str) -> DiscoveryResult | None:
     """Build ``TCPIP::<host>::INSTR`` and confirm it answers ``*IDN?``."""
     resource = f"TCPIP::{host}::INSTR"
     idn = _probe_idn(resource)
@@ -137,7 +136,7 @@ def discover_manual(host: str) -> Optional[DiscoveryResult]:
     return None
 
 
-def cascade(host: Optional[str] = None) -> Optional[DiscoveryResult]:
+def cascade(host: str | None = None) -> DiscoveryResult | None:
     """Run the full discovery cascade, returning the first success.
 
     USB → LAN (best-effort) → manual (only if ``host`` is supplied). Returns

@@ -32,6 +32,7 @@ hardware = [
 ]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -47,6 +48,16 @@ packages = ["src/scpi_mcp"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+src = ["src", "tests"]
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/F: pyflakes + pycodestyle. I: import sorting. B: bugbears.
+# A: flake8-builtins — flags shadowing a Python builtin (e.g. naming an
+#    exception class PermissionError / ConnectionError). UP: pyupgrade.
+select = ["E", "F", "I", "B", "A", "UP"]
 
 [tool.uv]
 # Keep Part 1 installable with zero hardware: the `hardware` extra (the Part 2

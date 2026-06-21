@@ -13,7 +13,9 @@ def test_self_config_connects_mock(monkeypatch) -> None:
     from scpi_mcp import transport
 
     monkeypatch.setattr(transport, "autoconnect", lambda host=None: MockInstrument())
-    monkeypatch.setattr(transport.connect, "cached_resource", lambda: "USB::MOCK::INSTR")
+    monkeypatch.setattr(
+        transport.connect, "cached_resource", lambda: "USB::MOCK::INSTR"
+    )
     session = Session(tier=PermissionTier.READ_ONLY)
     result = connection.self_config_impl(session)
     assert result["connected"] is True

@@ -6,7 +6,7 @@ stop acquisition or reset state. Gated at ``read_config``.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..config import PermissionTier, Session, requires
 from ..instruments.base import TriggerConfig
@@ -18,10 +18,10 @@ def set_channel_impl(
     session: Session,
     channel: int,
     *,
-    enabled: Optional[bool] = None,
-    scale: Optional[float] = None,
-    offset: Optional[float] = None,
-    coupling: Optional[str] = None,
+    enabled: bool | None = None,
+    scale: float | None = None,
+    offset: float | None = None,
+    coupling: str | None = None,
 ) -> dict[str, Any]:
     """Set vertical config for a channel (enable, V/div, offset, coupling)."""
     session.require_instrument().set_channel(
@@ -34,8 +34,8 @@ def set_channel_impl(
 def set_timebase_impl(
     session: Session,
     *,
-    scale: Optional[float] = None,
-    offset: Optional[float] = None,
+    scale: float | None = None,
+    offset: float | None = None,
 ) -> dict[str, Any]:
     """Set horizontal time base (s/div and offset)."""
     session.require_instrument().set_timebase(scale=scale, offset=offset)
