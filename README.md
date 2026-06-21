@@ -11,14 +11,15 @@ with **no raw-SCPI escape hatch**.
 
 ```
         .-"""-.
-       / .===. \      Skippi
-       \/ 6 6 \/      your bench-buddy scope gremlin
-       ( \___/ )      "probe first, ask questions later"
+       / .===. \      Skippi  🧚‍♂️
+       \/ 6 6 \/      the artistic scope gremlin
+       ( \___/ )      "every waveform is a portrait of the magic pixies"
     ___ooo___ooo___
 ```
 
-> **Skippi** is the mascot — the little gremlin who lives in the scope and knows
-> where all the signals hide.
+> **Skippi** is the mascot — the artistic gremlin who lives in the scope and
+> paints pictures of the magic pixies (the ones who carry every electron down
+> the probe). When you see a clean trace, that's Skippi's latest masterpiece.
 
 ## Scope
 
