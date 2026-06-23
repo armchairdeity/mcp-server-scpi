@@ -47,9 +47,21 @@ def test_discover_usb_none_when_no_match(monkeypatch: pytest.MonkeyPatch) -> Non
     assert discover.discover_usb() is None
 
 
-def test_lan_discovery_is_best_effort_none() -> None:
-    # Part 1: LAN broadcast is stubbed to None (no live network I/O).
+def test_lan_discovery_none_when_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Probe fails (nothing answers) → None. No live network I/O in the test.
+    monkeypatch.setattr(discover, "_probe_idn", lambda res, timeout_ms=2000: None)
     assert discover.discover_lan() is None
+
+
+def test_lan_discovery_finds_known_unit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        discover, "_probe_idn", lambda res, timeout_ms=2000: _RIGOL_IDN
+    )
+    result = discover.discover_lan()
+    assert result is not None
+    assert result.resource == discover.KNOWN_LAN_RESOURCE
+    assert result.source is DiscoverySource.LAN
+    assert result.reliable is False  # direct-probe LAN is best-effort
 
 
 def test_manual_builds_tcpip_resource(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,14 +115,40 @@ def test_resolve_resource_raises_when_absent(monkeypatch: pytest.MonkeyPatch) ->
         connect.resolve_resource()
 
 
-def test_autoconnect_uses_mock_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_autoconnect_resolves_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An explicit mock backend_factory keeps this hermetic (no hardware import).
     usb = discover.DiscoveryResult(
         resource="USB::DS1ZA::INSTR", source=DiscoverySource.USB, reliable=True
     )
     monkeypatch.setattr(discover, "discover_usb", lambda: usb)
-    inst = connect.autoconnect()
+    inst = connect.autoconnect(backend_factory=lambda resource: MockInstrument())
     assert isinstance(inst, MockInstrument)
     assert connect.cached_resource() == "USB::DS1ZA::INSTR"
+
+
+def test_default_factory_routes_mock_resources() -> None:
+    # None / MOCK-prefixed resources select the mock with no hardware needed.
+    assert isinstance(connect._default_backend_factory(None), MockInstrument)
+    assert isinstance(connect._default_backend_factory("MOCK::DS1ZA"), MockInstrument)
+
+
+def test_default_factory_routes_hardware_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # TCPIP/USB resources are routed to the real backend. We stub the import so
+    # the test stays hermetic and asserts only the routing decision.
+    import scpi_mcp.instruments.rigol_ds1000z as rigol
+
+    captured = {}
+
+    class FakeBackend:
+        def __init__(self, resource: str) -> None:
+            captured["resource"] = resource
+
+    monkeypatch.setattr(rigol, "RigolDS1000Z", FakeBackend)
+    backend = connect._default_backend_factory("TCPIP0::192.168.2.2::INSTR")
+    assert isinstance(backend, FakeBackend)
+    assert captured["resource"] == "TCPIP0::192.168.2.2::INSTR"
 
 
 def test_connect_to_passes_resource_to_factory() -> None:
