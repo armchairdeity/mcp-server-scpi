@@ -74,26 +74,54 @@ def to_xlsx(waveform: Waveform, path: PathLike, *, chart: bool = False) -> Path:
     return out
 
 
+# Time-axis unit scaling: (threshold in seconds, divisor, label).
+_TIME_UNITS = (
+    (1e-6, 1e-9, "ns"),
+    (1e-3, 1e-6, "µs"),
+    (1.0, 1e-3, "ms"),
+)
+
+
+def _time_scale(max_abs_t: float) -> tuple[float, str]:
+    """Pick a human time unit (ns/µs/ms/s) from the largest |t| in the trace."""
+    for threshold, divisor, label in _TIME_UNITS:
+        if max_abs_t < threshold:
+            return divisor, label
+    return 1.0, "s"
+
+
 def to_png(waveform: Waveform, path: PathLike) -> Path:
-    """Write a PNG of the waveform.
+    """Render the waveform to a PNG plot (matplotlib, Agg backend).
 
-    Part 1 stub: emits a minimal valid (1x1) PNG so the export path is testable
-    without a plotting backend.
-
-    TODO: Part 3 — render an actual plot (matplotlib or the scope's own screen
-    grab) instead of the placeholder.
+    Plots volts vs. time with an auto-scaled time axis (ns/µs/ms/s), axis
+    labels, and a channel/source title. Requires matplotlib (the ``plot`` or
+    ``hardware`` extra); raises a clear :class:`ImportError` if it's missing.
     """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")  # headless: no display needed
+        import matplotlib.pyplot as plt
+    except ImportError as exc:  # pragma: no cover - exercised only without matplotlib
+        raise ImportError(
+            "PNG export needs matplotlib. Install the 'plot' extra: "
+            '`uv pip install -e ".[plot]"`.'
+        ) from exc
+
     out = Path(path)
-    # Smallest valid 1x1 transparent PNG.
-    _PNG_1X1 = bytes(
-        [
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-            0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-            0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-            0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-        ]
-    )
-    out.write_bytes(_PNG_1X1)
+    max_abs_t = max((abs(t) for t in waveform.time), default=0.0)
+    divisor, unit = _time_scale(max_abs_t)
+    times = [t / divisor for t in waveform.time]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    try:
+        ax.plot(times, waveform.volts, linewidth=0.8, color="#e8b923")
+        ax.set_xlabel(f"Time ({unit})")
+        ax.set_ylabel("Voltage (V)")
+        ax.set_title(f"CH{waveform.channel} · {waveform.source}")
+        ax.grid(True, which="both", alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(out, dpi=100)
+    finally:
+        plt.close(fig)
     return out

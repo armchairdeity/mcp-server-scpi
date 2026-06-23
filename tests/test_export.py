@@ -34,6 +34,8 @@ def test_xlsx_written(tmp_path: Path) -> None:
     assert out.exists() and out.stat().st_size > 0
 
 
-def test_png_is_valid_stub(tmp_path: Path) -> None:
+def test_png_is_real_render(tmp_path: Path) -> None:
     out = to_png(_waveform(), tmp_path / "wf.png")
-    assert out.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    data = out.read_bytes()
+    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(data) > 1024  # a real rendered plot, not a 1x1 placeholder
