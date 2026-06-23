@@ -30,6 +30,10 @@ hardware = [
     # "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git",
     "rigol-ds1000z>=0.2",
 ]
+# Plotting (PNG export of captured waveforms) without the hardware library.
+plot = [
+    "matplotlib>=3.7",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
