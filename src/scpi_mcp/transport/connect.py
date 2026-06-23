@@ -66,11 +66,24 @@ def resolve_resource(host: str | None = None, *, use_cache: bool = True) -> str:
 
 
 def _default_backend_factory(resource: str) -> Instrument:
-    """Part 1 default: ignore the resource and return a mock.
+    """Select a backend from the resolved resource string.
 
-    TODO: Part 3 — return ``RigolDS1000Z(resource)`` here (or select by IDN),
-    swapping the mock for the live scope.
+    ``TCPIP``/``USB`` resources build the real :class:`RigolDS1000Z` (lazily
+    imported — it lives in the optional ``hardware`` extra). ``None`` or a
+    ``MOCK``-prefixed resource selects the mock backend, which needs no hardware.
     """
+    if resource is None or resource.upper().startswith("MOCK"):
+        return MockInstrument()
+    if resource.upper().startswith(("TCPIP", "USB")):
+        try:
+            from ..instruments.rigol_ds1000z import RigolDS1000Z
+        except ImportError as exc:
+            raise InstrumentConnectionError(
+                f"resource {resource!r} needs the hardware backend, but the "
+                "'rigol-ds1000z' library is not installed. Install it with "
+                '`uv pip install -e ".[hardware]"`.'
+            ) from exc
+        return RigolDS1000Z(resource)
     return MockInstrument()
 
 
