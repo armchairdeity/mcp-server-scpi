@@ -20,6 +20,8 @@ Each module exposes:
 
 from __future__ import annotations
 
+import functools
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -37,14 +39,27 @@ def guarded(session: Session, impl: Callable[..., Any]) -> Callable[..., Any]:
     Binds the session and converts :class:`PermissionDenied` (tier/confirmation
     denials) into a refusal payload instead of an exception, so the model sees a
     clean "the server refused" result.
+
+    Uses ``functools.wraps`` AND rebuilds the signature without the leading
+    ``session`` parameter so FastMCP introspects the real tool parameters and
+    generates a correct JSON schema (instead of the useless ``*args/**kwargs``
+    schema produced when the signature is opaque).
     """
 
-    def tool(*args: Any, **kwargs: Any) -> Any:
+    @functools.wraps(impl)
+    def tool(**kwargs: Any) -> Any:
         try:
-            return impl(session, *args, **kwargs)
+            return impl(session, **kwargs)
         except PermissionDenied as exc:
             return refusal(str(exc))
 
-    tool.__name__ = getattr(impl, "__name__", "tool")
-    tool.__doc__ = impl.__doc__
+    # Remove the 'session' parameter from the visible signature so FastMCP
+    # doesn't expect callers to supply it.
+    original_sig = inspect.signature(impl)
+    params = [
+        p for name, p in original_sig.parameters.items()
+        if name != "session"
+    ]
+    tool.__signature__ = original_sig.replace(parameters=params)  # type: ignore[attr-defined]
+
     return tool
