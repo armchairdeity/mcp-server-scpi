@@ -64,17 +64,20 @@ Real captures from the bench, analyzed live via scpi-mcp.
 bench supply. Probed at the moment of power-off to observe inductive kickback.
 CH1 watches the supply rail; CH2 sits across the freewheel diode.
 
-**The prompt:**
+**Prompts used:**
 
-> "Shot of the scope's screen — is that a spike up to like 60 V?"
+```
+Grab the scope screen.
+What are the min and max voltages on each channel?
+Is that spike on CH2 actually 60 V, or is the scale messing with me?
+```
 
 scpi-mcp called `capture_screen` and `measure_snapshot`, then explained the
 visual illusion: CH2 is set to 1 V/div, so its 5.36 V kickback spike fills
 5+ of the 8 vertical divisions and *looks* enormous. CH1 is at 8 V/div, so
 the 24 V rail only occupies ~3 divisions despite being far larger in absolute
 terms. No 60 V spike — the freewheel diode clamped it cleanly to
-V_supply + V_f ≈ 24.7 V, right where it should be. Skippi's portrait of a
-diode doing its job.
+V_supply + V_f ≈ 24.7 V, right where it should be.
 
 ![Power-off capture — relay coil, freewheel diode installed](docs/images/scope_poweroff_long.png)
 
@@ -82,9 +85,23 @@ diode doing its job.
 26.9 V → 2.24 V. CH2 cyan, 1 V/div: freewheel diode kickback, max 5.36 V,
 min −2.08 V.*
 
-> Power-on capture coming — bench experiment with a bare coil (no freewheel
-> diode) and a normally-closed momentary pushbutton planned to observe the raw
-> unclamped L·di/dt spike.
+---
+
+### Power-on — bare coil, unclamped spike *(planned)*
+
+**The setup:** Same coil, freewheel diode removed. Series resistor between DCPS
+and coil to isolate supply capacitance. NC momentary pushbutton as the
+disconnect so the break is clean and repeatable.
+
+**Prompts to use:**
+
+```
+Set a single-shot trigger on CH1 falling edge at 10 V.
+Arm it — I'm about to cut power.
+Got it. Grab the screen and tell me the peak voltage on CH1.
+```
+
+> Capture pending — will replace this note once the bench experiment runs.
 
 ## License
 
