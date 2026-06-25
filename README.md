@@ -42,9 +42,9 @@ support. Reachable over USB or LAN (`TCPIP::<ip>::INSTR`).
 
 ## Status
 
-Part 1 (this scaffold) runs entirely against a `MockInstrument` — no hardware,
-no live VISA. Library completion (Part 2) and hardware-in-the-loop wiring
-(Part 3) are bench tasks. See `SCAFFOLD_TASK.md`.
+**Live hardware, active bench use.** The Rigol DS1054Z is connected and
+scpi-mcp is driving real measurements — see [Skippi in the Wild](#skippi-in-the-wild)
+for captures. The mock backend remains available for development and CI.
 
 ## Quickstart
 
