@@ -15,7 +15,7 @@ Measurement sentinel
 ---------------------
 Instruments return 9.9e37 when a measurement is unavailable (e.g. no signal,
 display gating, or the quantity doesn't apply to the current waveform). The CLI
-maps any value with abs() ≥ 9e37 to ``null`` / empty in CSV output.
+maps any value with abs() >= 9e37 to ``null`` / empty in CSV output.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -41,7 +41,7 @@ from ..tools.measure import measure_impl, snapshot_impl
 # Sentinel handling
 # ---------------------------------------------------------------------------
 
-_SENTINEL_THRESHOLD = 9e37  # abs(value) ≥ this → "no measurement available"
+_SENTINEL_THRESHOLD = 9e37  # abs(value) >= this -> "no measurement available"
 
 
 def _null_sentinel(value: float | None) -> float | None:
@@ -55,7 +55,13 @@ def _null_sentinel(value: float | None) -> float | None:
 # Session bootstrap
 # ---------------------------------------------------------------------------
 
-def _connect(host: str | None, tier: str = "read_only", *, mock: bool = False) -> Session:
+
+def _connect(
+    host: str | None,
+    tier: str = "read_only",
+    *,
+    mock: bool = False,
+) -> Session:
     """Build and return a connected Session, exiting on failure.
 
     Pass ``mock=True`` to skip discovery and use a MockInstrument — useful for
@@ -105,6 +111,7 @@ def _global_options(
     global _use_mock
     _use_mock = mock
 
+
 # Ordered list used by `capture` and `snapshot` — matches scope-monitor spec.
 _CAPTURE_KINDS: list[MeasurementKind] = [
     MeasurementKind.FREQUENCY,
@@ -114,17 +121,20 @@ _CAPTURE_KINDS: list[MeasurementKind] = [
     MeasurementKind.DUTY,
 ]
 
-_CSV_HEADER = ["timestamp", "session_id", "channel"] + [k.value for k in _CAPTURE_KINDS]
+_CSV_HEADER = (
+    ["timestamp", "session_id", "channel"] + [k.value for k in _CAPTURE_KINDS]
+)
 
 
 # ---------------------------------------------------------------------------
 # Rows formatter — clean, SI-scaled, aligned columns
 # ---------------------------------------------------------------------------
 
+
 def _si(value: float | None, unit: str) -> str:
-    """Format a value with SI prefix scaling. Returns '—' for None/unavailable."""
+    """Format a value with SI prefix scaling. Returns '--' for None."""
     if value is None:
-        return "—"
+        return "--"
     abs_v = abs(value)
     if unit == "Hz":
         if abs_v >= 1e6:
@@ -138,7 +148,7 @@ def _si(value: float | None, unit: str) -> str:
         if abs_v >= 1e-3:
             return f"{value*1e3:.3f}ms"
         if abs_v >= 1e-6:
-            return f"{value*1e6:.3f}µs"
+            return f"{value*1e6:.3f}us"
         return f"{value*1e9:.3f}ns"
     if unit == "V":
         if abs_v >= 1:
@@ -149,24 +159,34 @@ def _si(value: float | None, unit: str) -> str:
     return f"{value:.4g} {unit}"
 
 
-_UNITS = {
-    MeasurementKind.FREQUENCY: "Hz",
-    MeasurementKind.PERIOD:    "s",
-    MeasurementKind.VPP:       "V",
-    MeasurementKind.VRMS:      "V",
-    MeasurementKind.DUTY:      "%",
-}
+_ROW_HEADER = (
+    f"{'timestamp':<24}  {'ch':>3}  "
+    f"{'freq':>10}  {'period':>10}  {'vpp':>8}  {'vrms':>8}  {'duty':>7}"
+)
 
-_ROW_HEADER = f"{'timestamp':<24}  {'ch':>3}  {'freq':>10}  {'period':>10}  {'vpp':>8}  {'vrms':>8}  {'duty':>7}"
+
+def _row_line(ts_short: str, ch: int, row: dict) -> str:
+    freq   = _si(_null_sentinel(row.get("frequency")), "Hz")
+    period = _si(_null_sentinel(row.get("period")),    "s")
+    vpp    = _si(_null_sentinel(row.get("vpp")),       "V")
+    vrms   = _si(_null_sentinel(row.get("vrms")),      "V")
+    duty   = _si(_null_sentinel(row.get("duty")),      "%")
+    return (
+        f"{ts_short:<24}  ch{ch}  "
+        f"{freq:>10}  {period:>10}  {vpp:>8}  {vrms:>8}  {duty:>7}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def connect(
-    host: Annotated[Optional[str], typer.Option("--host", "-h", help="IP or hostname")] = None,
+    host: Annotated[
+        str | None, typer.Option("--host", "-h", help="IP or hostname")
+    ] = None,
 ) -> None:
     """Connect to an instrument and report its identity and resource string."""
     session = _connect(host, mock=_use_mock)
@@ -180,8 +200,10 @@ def connect(
 
 @app.command()
 def identify(
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="Output: text|json")] = "text",
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
+    fmt: Annotated[
+        str, typer.Option("--format", "-f", help="Output: text|json")
+    ] = "text",
 ) -> None:
     """Identify the connected instrument (vendor, model, serial, firmware)."""
     session = _connect(host, mock=_use_mock)
@@ -197,7 +219,7 @@ def identify(
 
 @app.command()
 def caps(
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
 ) -> None:
     """Report instrument capabilities: channels, bandwidth, options."""
     session = _connect(host, mock=_use_mock)
@@ -208,41 +230,57 @@ def caps(
 @app.command()
 def capture(
     channels: Annotated[
-        Optional[list[int]],
+        list[int] | None,
         typer.Argument(help="Channels to capture (default: all detected)"),
     ] = None,
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
     output: Annotated[
-        Optional[Path],
-        typer.Option("--output", "-o", help="CSV file path (appends; writes header if new)"),
+        Path | None,
+        typer.Option(
+            "--output", "-o",
+            help="CSV file path (appends; writes header if new)",
+        ),
     ] = None,
     session_id: Annotated[
-        Optional[str],
-        typer.Option("--session-id", "-s", help="Session ID tag; defaults to YYYYMMDD-HHMMSS"),
+        str | None,
+        typer.Option(
+            "--session-id", "-s",
+            help="Session ID tag; defaults to YYYYMMDD-HHMMSS",
+        ),
     ] = None,
     fmt: Annotated[
         str,
-        typer.Option("--format", "-f", help="Output format: rows|csv|json  (stdout default: rows; --output default: csv)"),
+        typer.Option(
+            "--format", "-f",
+            help="Output format: rows|csv|json (stdout default: rows)",
+        ),
     ] = "",
-    header: Annotated[bool, typer.Option("--header/--no-header", help="Print column header row (rows format)")] = False,
+    header: Annotated[
+        bool,
+        typer.Option(
+            "--header/--no-header",
+            help="Print column header row (rows format)",
+        ),
+    ] = False,
 ) -> None:
     """Capture a measurement snapshot for one or more channels.
 
     This is the primary launchd target for scope-monitor. Each invocation:
       1. Connects to the instrument.
-      2. Takes a measurement snapshot (freq, period, vpp, vrms, duty) per channel.
+      2. Takes a snapshot (freq, period, vpp, vrms, duty) per channel.
       3. Appends one row per channel to --output (CSV) or prints to stdout.
       4. Exits.
 
-    Default output format is 'rows' (clean, SI-scaled columns) when writing to
-    stdout, and 'csv' when writing to a file via --output.
+    Default stdout format is 'rows' (SI-scaled, aligned). File output
+    via --output defaults to 'csv' (machine-readable, full precision).
 
-      scpictl capture            # all channels → neat rows to stdout
-      scpictl capture 1 2        # channels 1 and 2
+      scpictl capture              # all channels -> neat rows to stdout
+      scpictl capture 1 2          # channels 1 and 2
       scpictl capture -f json | jq '.[].frequency'
-      scpictl capture -o log.csv # append CSV rows to file
+      scpictl capture -o log.csv   # append CSV rows to file
 
-    Unavailable measurements (sentinel 9.9e37) → '—' in rows, empty in csv, null in json.
+    Unavailable measurements (sentinel 9.9e37) -> '--' in rows,
+    empty in csv, null in json.
     """
     session = _connect(host, mock=_use_mock)
 
@@ -275,28 +313,24 @@ def capture(
         if header:
             typer.echo(_ROW_HEADER)
         for row in rows:
-            ts_short = row["timestamp"][:19] + "Z"  # drop sub-second + tz noise
-            ch = row["channel"]
-            freq   = _si(_null_sentinel(row.get("frequency")), "Hz")
-            period = _si(_null_sentinel(row.get("period")),    "s")
-            vpp    = _si(_null_sentinel(row.get("vpp")),       "V")
-            vrms   = _si(_null_sentinel(row.get("vrms")),      "V")
-            duty   = _si(_null_sentinel(row.get("duty")),      "%")
-            typer.echo(
-                f"{ts_short:<24}  ch{ch}  {freq:>10}  {period:>10}  {vpp:>8}  {vrms:>8}  {duty:>7}"
-            )
+            ts_short = row["timestamp"][:19] + "Z"
+            typer.echo(_row_line(ts_short, row["channel"], row))
         return
 
     # CSV — append to file or print to stdout
     if output:
         file_exists = output.exists() and output.stat().st_size > 0
         with open(output, "a", newline="") as fh:
-            writer = csv.DictWriter(fh, fieldnames=_CSV_HEADER, extrasaction="ignore")
+            writer = csv.DictWriter(
+                fh, fieldnames=_CSV_HEADER, extrasaction="ignore"
+            )
             if not file_exists:
                 writer.writeheader()
             writer.writerows(rows)
     else:
-        writer = csv.DictWriter(sys.stdout, fieldnames=_CSV_HEADER, extrasaction="ignore")
+        writer = csv.DictWriter(
+            sys.stdout, fieldnames=_CSV_HEADER, extrasaction="ignore"
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -307,11 +341,16 @@ def measure(
     kind: Annotated[
         str,
         typer.Argument(
-            help="Measurement type: vpp|vrms|frequency|period|duty|rise_time|fall_time"
+            help=(
+                "Measurement type: "
+                "vpp|vrms|frequency|period|duty|rise_time|fall_time"
+            )
         ),
     ],
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="Output: text|json")] = "text",
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
+    fmt: Annotated[
+        str, typer.Option("--format", "-f", help="Output: text|json")
+    ] = "text",
 ) -> None:
     """Take a single measurement on one channel."""
     session = _connect(host, mock=_use_mock)
@@ -327,21 +366,24 @@ def measure(
 @app.command()
 def snapshot(
     channel: Annotated[int, typer.Argument(help="Channel number (1-4)")],
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="Output: text|json")] = "text",
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
+    fmt: Annotated[
+        str, typer.Option("--format", "-f", help="Output: text|json")
+    ] = "text",
 ) -> None:
-    """Take a full measurement snapshot (freq, period, vpp, vrms, duty) on one channel."""
+    """Take a measurement snapshot (freq, period, vpp, vrms, duty) on one channel."""
     session = _connect(host, mock=_use_mock)
     result = snapshot_impl(session, channel, kinds=[k.value for k in _CAPTURE_KINDS])
     measurements = result.get("measurements", {})
 
     if fmt == "json":
-        # Null-clean the values before serializing
         cleaned = {
             k: {"value": _null_sentinel(v["value"]), "unit": v["unit"]}
             for k, v in measurements.items()
         }
-        typer.echo(json.dumps({"channel": channel, "measurements": cleaned}, indent=2))
+        typer.echo(
+            json.dumps({"channel": channel, "measurements": cleaned}, indent=2)
+        )
     else:
         typer.echo(f"Channel {channel}:")
         for name, data in measurements.items():
@@ -353,9 +395,9 @@ def snapshot(
 @app.command()
 def characterize(
     channel: Annotated[int, typer.Argument(help="Channel number (1-4)")],
-    host: Annotated[Optional[str], typer.Option("--host", "-h")] = None,
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
 ) -> None:
-    """Full signal characterization (probe → vertical fit → trigger hunt → measure).
+    """Full signal characterization: probe, vertical fit, trigger hunt, measure.
 
     Note: characterize_signal is stubbed in Part 1 and fully implemented in
     Part 3 once the rigol-ds1000z hardware backend is wired up.
@@ -368,6 +410,7 @@ def characterize(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     app()
