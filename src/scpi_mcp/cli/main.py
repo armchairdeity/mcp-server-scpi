@@ -118,6 +118,49 @@ _CSV_HEADER = ["timestamp", "session_id", "channel"] + [k.value for k in _CAPTUR
 
 
 # ---------------------------------------------------------------------------
+# Rows formatter — clean, SI-scaled, aligned columns
+# ---------------------------------------------------------------------------
+
+def _si(value: float | None, unit: str) -> str:
+    """Format a value with SI prefix scaling. Returns '—' for None/unavailable."""
+    if value is None:
+        return "—"
+    abs_v = abs(value)
+    if unit == "Hz":
+        if abs_v >= 1e6:
+            return f"{value/1e6:.3f}MHz"
+        if abs_v >= 1e3:
+            return f"{value/1e3:.3f}kHz"
+        return f"{value:.3f}Hz"
+    if unit == "s":
+        if abs_v >= 1:
+            return f"{value:.4f}s"
+        if abs_v >= 1e-3:
+            return f"{value*1e3:.3f}ms"
+        if abs_v >= 1e-6:
+            return f"{value*1e6:.3f}µs"
+        return f"{value*1e9:.3f}ns"
+    if unit == "V":
+        if abs_v >= 1:
+            return f"{value:.3f}V"
+        return f"{value*1e3:.1f}mV"
+    if unit == "%":
+        return f"{value:.1f}%"
+    return f"{value:.4g} {unit}"
+
+
+_UNITS = {
+    MeasurementKind.FREQUENCY: "Hz",
+    MeasurementKind.PERIOD:    "s",
+    MeasurementKind.VPP:       "V",
+    MeasurementKind.VRMS:      "V",
+    MeasurementKind.DUTY:      "%",
+}
+
+_ROW_HEADER = f"{'timestamp':<24}  {'ch':>3}  {'freq':>10}  {'period':>10}  {'vpp':>8}  {'vrms':>8}  {'duty':>7}"
+
+
+# ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
 
@@ -177,24 +220,29 @@ def capture(
         Optional[str],
         typer.Option("--session-id", "-s", help="Session ID tag; defaults to YYYYMMDD-HHMMSS"),
     ] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="Output format: csv|json")] = "csv",
+    fmt: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Output format: rows|csv|json  (stdout default: rows; --output default: csv)"),
+    ] = "",
+    header: Annotated[bool, typer.Option("--header/--no-header", help="Print column header row (rows format)")] = False,
 ) -> None:
     """Capture a measurement snapshot for one or more channels.
 
     This is the primary launchd target for scope-monitor. Each invocation:
       1. Connects to the instrument.
       2. Takes a measurement snapshot (freq, period, vpp, vrms, duty) per channel.
-      3. Appends one CSV row per channel to --output (or prints to stdout).
+      3. Appends one row per channel to --output (CSV) or prints to stdout.
       4. Exits.
 
-    Channel defaults to all channels the instrument reports. Pass channel
-    numbers as positional arguments to restrict:
+    Default output format is 'rows' (clean, SI-scaled columns) when writing to
+    stdout, and 'csv' when writing to a file via --output.
 
-      scpictl capture            # all channels
-      scpictl capture 1 2        # channels 1 and 2 only
+      scpictl capture            # all channels → neat rows to stdout
+      scpictl capture 1 2        # channels 1 and 2
+      scpictl capture -f json | jq '.[].frequency'
+      scpictl capture -o log.csv # append CSV rows to file
 
-    Unavailable measurements (instrument sentinel 9.9e37) are written as empty
-    cells in CSV and as null in JSON.
+    Unavailable measurements (sentinel 9.9e37) → '—' in rows, empty in csv, null in json.
     """
     session = _connect(host, mock=_use_mock)
 
@@ -216,8 +264,27 @@ def capture(
             row[kind.value] = _null_sentinel(float(raw)) if raw is not None else None
         rows.append(row)
 
-    if fmt == "json":
+    # Resolve default format: rows for stdout, csv for file
+    effective_fmt = fmt or ("csv" if output else "rows")
+
+    if effective_fmt == "json":
         typer.echo(json.dumps(rows, indent=2, default=str))
+        return
+
+    if effective_fmt == "rows":
+        if header:
+            typer.echo(_ROW_HEADER)
+        for row in rows:
+            ts_short = row["timestamp"][:19] + "Z"  # drop sub-second + tz noise
+            ch = row["channel"]
+            freq   = _si(_null_sentinel(row.get("frequency")), "Hz")
+            period = _si(_null_sentinel(row.get("period")),    "s")
+            vpp    = _si(_null_sentinel(row.get("vpp")),       "V")
+            vrms   = _si(_null_sentinel(row.get("vrms")),      "V")
+            duty   = _si(_null_sentinel(row.get("duty")),      "%")
+            typer.echo(
+                f"{ts_short:<24}  ch{ch}  {freq:>10}  {period:>10}  {vpp:>8}  {vrms:>8}  {duty:>7}"
+            )
         return
 
     # CSV — append to file or print to stdout
