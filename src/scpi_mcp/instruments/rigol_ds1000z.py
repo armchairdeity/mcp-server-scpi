@@ -67,14 +67,32 @@ class _SocketOscope:
         self.visa_rsrc = visa_rsrc
 
     def write(self, cmd: str) -> None:
-        # Append *WAI so a subsequent read-back reflects the completed command.
+        # Append *WAI so a subsequent read-back reflects the completed command,
+        # and pace commands: the raw socket desyncs (a query reads one response
+        # behind) under rapid write/query sequences without a small beat.
         self.visa_rsrc.write(cmd + ";*WAI")
+        time.sleep(0.01)
 
     def read(self) -> str:
         return str(self.visa_rsrc.read()).strip()
 
     def query(self, cmd: str, delay=None) -> str:
-        return str(self.visa_rsrc.query(cmd)).strip()
+        # Resync before querying: on the raw socket a rapid config loop can leave
+        # a stale reply buffered, which would make the next query read one
+        # response behind (empty/garbled). Discard anything pending (fast, via a
+        # short timeout), then issue our query with a small write→read delay.
+        rsrc = self.visa_rsrc
+        saved = rsrc.timeout
+        try:
+            rsrc.timeout = 15
+            while True:
+                try:
+                    rsrc.read()
+                except Exception:
+                    break
+        finally:
+            rsrc.timeout = saved
+        return str(rsrc.query(cmd, delay=0.02 if delay is None else delay)).strip()
 
     # -- acquisition-control device verbs ---------------------------------
     def run(self) -> None:

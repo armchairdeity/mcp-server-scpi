@@ -5,13 +5,12 @@ signal: find a stable trigger, scale the display to fit, then report a full
 measurement set with confidence. It is the reason ``scpi-mcp`` is "oscilloscope
 expertise" and not just "a SCPI wire."
 
-**Part 1 stubs the loop.** The control flow and the settle-and-verify intent are
-written out below so Part 3 can fill in the body against real hardware; the tool
-itself returns a structured "not implemented" result so the scaffold stays
-honest and testable. No measurement/trigger logic actually runs here yet.
+The loop is fully implemented and runs against the live backend, settling and
+re-verifying after each adjustment (bounded by ``MAX_SETTLE_ITERATIONS``) rather
+than assuming an instant response.
 
-The loop (to be implemented in Part 3)
---------------------------------------
+The loop
+--------
 1. **Probe** — capture a screen waveform; rough-estimate amplitude & frequency.
 2. **Vertical fit** — set channel scale/offset so the signal fills ~6 divisions.
        → settle, then re-capture and VERIFY it actually fits (clipping? too

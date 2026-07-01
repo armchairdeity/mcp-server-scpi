@@ -1,9 +1,9 @@
 """Export captured data to JSON / CSV / XLSX / PNG.
 
-Part 1: these accept a :class:`~scpi_mcp.instruments.base.Waveform` (or the mock
-data the tools produce) and emit real, valid files in each format — JSON, CSV,
-and XLSX are fully functional against mock data; PNG is a stub that writes a
-minimal valid file (real plotting is wired up alongside hardware in Part 3).
+These accept a :class:`~scpi_mcp.instruments.base.Waveform` and emit real, valid
+files in each format — JSON (samples + metadata), CSV (time_s,volts), XLSX (with
+an optional embedded chart), and PNG (a matplotlib plot). All are functional;
+PNG requires matplotlib (the ``plot`` or ``hardware`` extra).
 
 Each function takes an output ``path`` and returns it, so tools can hand back a
 location. They are deliberately format-only: no instrument access here.

@@ -47,12 +47,13 @@ DS1104Z_BASE = Capabilities(
 def detect_capabilities(instrument: Instrument) -> Capabilities:
     """Return the instrument's capabilities.
 
-    Part 1 stub: trusts whatever profile the backend advertises (the mock and
-    the rigol wrapper both expose :attr:`Instrument.capabilities`) and otherwise
-    falls back to :data:`DS1104Z_BASE`.
+    Trusts the profile the backend advertises (the mock and the rigol wrapper
+    both expose :attr:`Instrument.capabilities`), falling back to
+    :data:`DS1104Z_BASE`.
 
-    TODO: Part 2 — replace with a real ``*OPT?`` query routed through the
-    library and parse installed options into :attr:`Capabilities.options`.
+    Note: this DS1104Z firmware returns "Command error" for ``*OPT?``, so live
+    option detection isn't available on the bench unit — the model-derived base
+    profile is the authoritative answer.
     """
 
     caps = getattr(instrument, "capabilities", None)

@@ -396,15 +396,71 @@ def snapshot(
 def characterize(
     channel: Annotated[int, typer.Argument(help="Channel number (1-4)")],
     host: Annotated[str | None, typer.Option("--host", "-h")] = None,
+    export: Annotated[
+        Path | None,
+        typer.Option("--export", "-e", help="Render captured waveform to a PNG"),
+    ] = None,
 ) -> None:
     """Full signal characterization: probe, vertical fit, trigger hunt, measure.
 
-    Note: characterize_signal is stubbed in Part 1 and fully implemented in
-    Part 3 once the rigol-ds1000z hardware backend is wired up.
+    Drives the settle-and-verify loop against the connected scope and reports the
+    discovered parameters, a full measurement snapshot, and a confidence flag.
+    With --export, the fitted waveform is rendered to a PNG.
     """
     session = _connect(host, tier="read_config", mock=_use_mock)
-    result = characterize_signal_impl(session, channel)
+    result = characterize_signal_impl(
+        session, channel, export_path=str(export) if export else None
+    )
     typer.echo(json.dumps(result, indent=2))
+
+
+@app.command()
+def waveform(
+    channel: Annotated[int, typer.Argument(help="Channel number (1-4)")],
+    host: Annotated[str | None, typer.Option("--host", "-h")] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Comma-separated: json,csv,xlsx,png"),
+    ] = "json",
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output", "-o",
+            help="Base path (extension added per format); default waveform-CH<n>-<ts>",
+        ),
+    ] = None,
+    deep: Annotated[
+        bool,
+        typer.Option("--deep", help="Deep-memory (RAW) capture instead of on-screen"),
+    ] = False,
+) -> None:
+    """Capture a channel's waveform and write it to file(s).
+
+    Formats: json (samples + metadata), csv (time_s,volts), xlsx (optional
+    chart), png (plot). Emit several at once with a comma list.
+
+      scpictl waveform 2 -f json,png -o cap --host 192.168.2.2
+    """
+    from ..export.formats import to_csv, to_json, to_png, to_xlsx
+
+    writers = {"json": to_json, "csv": to_csv, "xlsx": to_xlsx, "png": to_png}
+    fmts = [f.strip().lower() for f in fmt.split(",") if f.strip()]
+    unknown = [f for f in fmts if f not in writers]
+    if unknown:
+        typer.echo(
+            f"Unknown format(s): {', '.join(unknown)}. Pick from json,csv,xlsx,png.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    session = _connect(host, mock=_use_mock)
+    inst = session.require_instrument()
+    wf = inst.capture_memory(channel) if deep else inst.capture_screen(channel)
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    base = Path(output or f"waveform-CH{channel}-{ts}")
+    for f in fmts:
+        typer.echo(str(writers[f](wf, base.with_suffix(f".{f}"))))
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 [project]
 name = "scpi-mcp"
-version = "1.0.0rc1"
+version = "1.0.0"
 description = "Oscilloscope expertise for agents over MCP — a SCPI/VISA instrument interface for the Model Context Protocol."
 readme = "README.md"
 license = { text = "MIT" }
