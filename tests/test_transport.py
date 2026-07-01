@@ -70,7 +70,7 @@ def test_manual_builds_tcpip_resource(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     result = discover.discover_manual("192.168.2.2")
     assert result is not None
-    assert result.resource == "TCPIP::192.168.2.2::INSTR"
+    assert result.resource == "TCPIP0::192.168.2.2::5555::SOCKET"
     assert result.source is DiscoverySource.MANUAL
 
 
@@ -132,23 +132,41 @@ def test_default_factory_routes_mock_resources() -> None:
     assert isinstance(connect._default_backend_factory("MOCK::DS1ZA"), MockInstrument)
 
 
-def test_default_factory_routes_hardware_resources(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # TCPIP/USB resources are routed to the real backend. We stub the import so
-    # the test stays hermetic and asserts only the routing decision.
+def test_default_factory_builds_live_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Without SCPI_MCP_MOCK the factory builds the live backend, opening a socket
+    # device from the resolved resource. Both seams are stubbed to stay hermetic.
+    monkeypatch.delenv("SCPI_MCP_MOCK", raising=False)
     import scpi_mcp.instruments.rigol_ds1000z as rigol
 
-    captured = {}
+    captured: dict = {}
+
+    def fake_open(resource: str) -> str:
+        captured["resource"] = resource
+        return "DEVICE"
+
+    monkeypatch.setattr(connect, "_open_socket_device", fake_open)
 
     class FakeBackend:
-        def __init__(self, resource: str) -> None:
-            captured["resource"] = resource
+        def __init__(self, device) -> None:
+            captured["device"] = device
 
     monkeypatch.setattr(rigol, "RigolDS1000Z", FakeBackend)
-    backend = connect._default_backend_factory("TCPIP0::192.168.2.2::INSTR")
+    backend = connect._default_backend_factory("TCPIP0::192.168.2.2::5555::SOCKET")
     assert isinstance(backend, FakeBackend)
-    assert captured["resource"] == "TCPIP0::192.168.2.2::INSTR"
+    assert captured["resource"] == "TCPIP0::192.168.2.2::5555::SOCKET"
+    assert captured["device"] == "DEVICE"
+
+
+def test_socket_resource_normalization() -> None:
+    assert (
+        connect._socket_resource("192.168.2.2") == "TCPIP0::192.168.2.2::5555::SOCKET"
+    )
+    assert (
+        connect._socket_resource("TCPIP::192.168.2.2::INSTR")
+        == "TCPIP0::192.168.2.2::5555::SOCKET"
+    )
+    already = "TCPIP0::192.168.2.2::5555::SOCKET"
+    assert connect._socket_resource(already) == already
 
 
 def test_connect_to_passes_resource_to_factory() -> None:

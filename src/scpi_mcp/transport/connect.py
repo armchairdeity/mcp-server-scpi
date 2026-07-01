@@ -65,26 +65,51 @@ def resolve_resource(host: str | None = None, *, use_cache: bool = True) -> str:
     return result.resource
 
 
-def _default_backend_factory(resource: str) -> Instrument:
-    """Select a backend from the resolved resource string.
+def _socket_resource(resource_or_ip: str) -> str:
+    """Normalize a host or VISA resource to a raw-socket resource on port 5555.
 
-    ``TCPIP``/``USB`` resources build the real :class:`RigolDS1000Z` (lazily
-    imported — it lives in the optional ``hardware`` extra). ``None`` or a
-    ``MOCK``-prefixed resource selects the mock backend, which needs no hardware.
+    On the bench link VXI-11/``INSTR`` stalls, so we always talk over the raw
+    SCPI socket (``TCPIP0::<host>::5555::SOCKET``), which is fast and stable.
     """
-    if resource is None or resource.upper().startswith("MOCK"):
+    text = resource_or_ip
+    if "SOCKET" in text.upper():
+        return text
+    if text.upper().startswith("TCPIP"):
+        parts = text.split("::")
+        host = parts[1] if len(parts) > 1 else text
+    else:
+        host = text
+    return f"TCPIP0::{host}::5555::SOCKET"
+
+
+def _open_socket_device(resource: str):
+    """Open a raw-socket pyvisa resource, wrapped for the library subsystems."""
+    import pyvisa
+
+    from ..instruments.rigol_ds1000z import _SocketOscope
+
+    rm = pyvisa.ResourceManager("@py")
+    rsrc = rm.open_resource(_socket_resource(resource))
+    rsrc.read_termination = "\n"
+    rsrc.write_termination = "\n"
+    rsrc.timeout = 15000
+    return _SocketOscope(rsrc)
+
+
+def _default_backend_factory(resource: str) -> Instrument:
+    """Build the backend for a resolved resource.
+
+    Defaults to the live :class:`RigolDS1000Z` over a raw socket. Set the
+    ``SCPI_MCP_MOCK`` environment variable to force the mock backend (used by CI
+    and by the server when no bench scope is attached).
+    """
+    import os
+
+    if os.environ.get("SCPI_MCP_MOCK"):
         return MockInstrument()
-    if resource.upper().startswith(("TCPIP", "USB")):
-        try:
-            from ..instruments.rigol_ds1000z import RigolDS1000Z
-        except ImportError as exc:
-            raise InstrumentConnectionError(
-                f"resource {resource!r} needs the hardware backend, but the "
-                "'rigol-ds1000z' library is not installed. Install it with "
-                '`uv pip install -e ".[hardware]"`.'
-            ) from exc
-        return RigolDS1000Z(resource)
-    return MockInstrument()
+    from ..instruments.rigol_ds1000z import RigolDS1000Z
+
+    return RigolDS1000Z(_open_socket_device(resource))
 
 
 def connect_to(

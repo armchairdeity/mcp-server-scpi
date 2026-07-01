@@ -1,6 +1,6 @@
 [project]
 name = "scpi-mcp"
-version = "0.1.0"
+version = "1.0.0rc1"
 description = "Oscilloscope expertise for agents over MCP — a SCPI/VISA instrument interface for the Model Context Protocol."
 readme = "README.md"
 license = { text = "MIT" }
@@ -22,11 +22,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The forked rigol-ds1000z library drives real hardware. The mock backend is
-# fully independent of it, so it stays optional here and the wrapper guards its
-# import. matplotlib backs the library's plotting utilities and PNG export.
+# The forked, *complete* rigol-ds1000z library is delivered in Part 2 (bench
+# task). Part 1 is built against the assumption that it exists, but the mock
+# backend is fully independent of it, so it stays optional here and the wrapper
+# guards its import. Swap the placeholder for the fork's git URL in Part 2.
 hardware = [
-    "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git",
+    # The complete fork with MEASure + ACQuire subsystems (Part 2/3).
+    "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git@v0.4.0",
     "matplotlib>=3.7",
 ]
 # Plotting (PNG export of captured waveforms) without the hardware library.
@@ -48,10 +50,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/scpi_mcp"]
-
-[tool.hatch.metadata]
-# The `hardware` extra references the rigol-ds1000z fork by git URL.
-allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

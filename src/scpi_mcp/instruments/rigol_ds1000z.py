@@ -1,23 +1,23 @@
-"""Thin wrapper over the ``rigol-ds1000z`` library.
+"""RigolDS1000Z backend — the live DS1000Z-series oscilloscope.
 
-Hard rule: **no raw-SCPI escape hatch.** Every method here calls a clean,
-named method on the library object (``measure``, ``acquire``, ``channel``,
-``timebase``, ``trigger``, ``waveform``, ``ieee``, ``run/stop/single/tforce``)
-— never a raw command string. All SCPI knowledge lives in the library; this
-file only maps the vendor-neutral :class:`Instrument` interface onto those
-named calls and translates value types.
+Wires the vendor-neutral :class:`Instrument` interface onto the forked
+``rigol-ds1000z`` library's subsystem functions (``ieee``, ``measure``,
+``acquire``, ``channel``, ``timebase``, ``trigger``, ``waveform``).
 
-The library is an optional dependency (the ``hardware`` extra), imported lazily
-so the package imports cleanly with zero hardware; only *constructing* a
-``RigolDS1000Z`` requires it. The mock backend covers everything else.
+Hard rule preserved: **no raw-SCPI escape hatch in a tool method.** Every
+capability calls a named library subsystem function. The only raw strings live
+in the tiny transport adapter below (``_SocketOscope``), which is the transport
+seam — the equivalent of the library's own ``Rigol_DS1000Z.write/query`` — not
+the tool layer.
 
-Transport (``transport/``) resolves the VISA resource string and passes it in;
-discovery stays entirely in our transport layer.
+Transport is a raw TCP socket (``TCPIP::<ip>::5555::SOCKET``) opened via the
+pure-python VISA backend. On the bench link VXI-11/``INSTR`` proved unreliable
+(RPC handshake stalls); the socket is fast and stable. See
+``transport/connect.py`` for construction.
 """
 
 from __future__ import annotations
 
-import math
 import time
 
 from ..capabilities import DS1104Z_BASE, Capabilities
@@ -30,192 +30,161 @@ from .base import (
     Waveform,
 )
 
-# Rigol returns this sentinel (~9.9e37) when a measurement is invalid — e.g. the
-# signal is off-screen or the channel is not displayed. We surface it as NaN at
-# this vendor-neutral boundary so the tools layer never sees the raw sentinel.
-_RIGOL_INVALID = 9.9e37
-
-# DS1000Z automatic-measurement item mnemonics for each neutral MeasurementKind.
-_MEASURE_ITEM: dict[MeasurementKind, str] = {
-    MeasurementKind.VPP: "VPP",
-    MeasurementKind.VRMS: "VRMS",
-    MeasurementKind.FREQUENCY: "FREQuency",
-    MeasurementKind.PERIOD: "PERiod",
-    MeasurementKind.DUTY: "PDUTy",
-    MeasurementKind.RISE_TIME: "RTIMe",
-    MeasurementKind.FALL_TIME: "FTIMe",
+# Our vendor-neutral measurement kinds → (DS1000Z :MEASure item mnemonic, unit).
+_ITEM: dict[MeasurementKind, tuple[str, str]] = {
+    MeasurementKind.VPP: ("VPP", "V"),
+    MeasurementKind.VRMS: ("VRMS", "V"),
+    MeasurementKind.FREQUENCY: ("FREQuency", "Hz"),
+    MeasurementKind.PERIOD: ("PERiod", "s"),
+    MeasurementKind.DUTY: ("PDUTy", "%"),
+    MeasurementKind.RISE_TIME: ("RTIMe", "s"),
+    MeasurementKind.FALL_TIME: ("FTIMe", "s"),
 }
 
-# Unit per measurement kind (vendor-neutral). DS1000Z reports duty as a percent.
-_MEASURE_UNIT: dict[MeasurementKind, str] = {
-    MeasurementKind.VPP: "V",
-    MeasurementKind.VRMS: "V",
-    MeasurementKind.FREQUENCY: "Hz",
-    MeasurementKind.PERIOD: "s",
-    MeasurementKind.DUTY: "%",
-    MeasurementKind.RISE_TIME: "s",
-    MeasurementKind.FALL_TIME: "s",
-}
+# Our slope names → the library/scope tokens.
+_SLOPE = {"rising": "POS", "falling": "NEG"}
 
-# Neutral acquisition-type names → DS1000Z :ACQuire:TYPE tokens.
-_ACQ_TYPE: dict[str, str] = {
+# Our free-text acquisition types → :ACQuire:TYPE tokens.
+_ACQ_TYPE = {
     "normal": "NORM",
     "average": "AVER",
     "peak": "PEAK",
-    "high_resolution": "HRES",
     "hres": "HRES",
+    "high_resolution": "HRES",
 }
 
-# DS1000Z reads at most this many points per :WAVeform:DATA? transfer.
-_RAW_CHUNK = 250_000
 
-# LAN VXI-11 can be flaky / high-latency; open with retries and a generous I/O
-# timeout. Mirrors the behavior the bench V&V harness relies on.
-_OPEN_RETRIES = 5
-_VISA_TIMEOUT_MS = 20_000
+class _SocketOscope:
+    """Duck-typed device the library subsystem functions expect.
 
+    Provides ``write``/``query``/``read`` over an injected pyvisa resource plus
+    the acquisition-control verbs (``run``/``stop``/``single``/``tforce``) the
+    library binds on its own device class. This is the transport primitive; it
+    is the only place raw command strings appear.
+    """
 
-def _load_library():
-    """Import the library lazily; give an actionable error if it's absent."""
-    try:
-        import rigol_ds1000z  # type: ignore  # noqa: F401
+    def __init__(self, visa_rsrc) -> None:
+        self.visa_rsrc = visa_rsrc
 
-        return rigol_ds1000z
-    except ImportError as exc:  # pragma: no cover - exercised only with hardware extra
-        raise ImportError(
-            "the 'rigol-ds1000z' library is not installed. Install the "
-            "'hardware' extra: `uv pip install -e \".[hardware]\"`. The mock "
-            "backend works without it."
-        ) from exc
+    def write(self, cmd: str) -> None:
+        # Append *WAI so a subsequent read-back reflects the completed command.
+        self.visa_rsrc.write(cmd + ";*WAI")
+
+    def read(self) -> str:
+        return str(self.visa_rsrc.read()).strip()
+
+    def query(self, cmd: str, delay=None) -> str:
+        return str(self.visa_rsrc.query(cmd)).strip()
+
+    # -- acquisition-control device verbs ---------------------------------
+    def run(self) -> None:
+        self.write(":RUN")
+
+    def stop(self) -> None:
+        self.write(":STOP")
+
+    def single(self) -> None:
+        self.write(":SING")
+
+    def tforce(self) -> None:
+        self.write(":TFOR")
+
+    def close(self) -> None:
+        self.visa_rsrc.close()
 
 
 class RigolDS1000Z(Instrument):
-    """DS1000Z-series backend over the forked ``rigol-ds1000z`` library."""
+    """Live backend for a DS1000Z-series scope over the forked library."""
 
     def __init__(
         self,
-        resource: str,
+        device: _SocketOscope,
         *,
         capabilities: Capabilities = DS1104Z_BASE,
     ) -> None:
-        self.resource = resource
+        # ``device`` is an opened, duck-typed transport (see transport layer).
+        # Injected rather than opened here so this class is unit-testable with a
+        # fake device and holds no pyvisa import itself.
+        self._dev = device
         self.capabilities = capabilities
-        self._lib = _load_library()
-        self._dev = self._connect(resource)
+        # Bind the library subsystem functions lazily — importing the library is
+        # only required when a live backend is actually constructed.
+        from rigol_ds1000z.src.acquire import acquire
+        from rigol_ds1000z.src.channel import channel
+        from rigol_ds1000z.src.ieee import ieee
+        from rigol_ds1000z.src.measure import measure
+        from rigol_ds1000z.src.timebase import timebase
+        from rigol_ds1000z.src.trigger import trigger
+        from rigol_ds1000z.src.waveform import waveform
 
-    def _connect(self, resource: str):
-        """Construct the library device for ``resource`` and open the link.
-
-        The library's constructor self-discovers a VISA backend by matching the
-        resource against ``find_visas()``; a LAN/TCPIP resource often isn't
-        enumerated there, which would leave ``visa_backend`` unset. We pin the
-        resource and a sensible backend explicitly, then open with retries.
-        """
-        dev = self._lib.Rigol_DS1000Z(resource)  # type: ignore[attr-defined]
-        dev.visa_name = resource
-        if getattr(dev, "visa_backend", None) is None:
-            dev.visa_backend = "@py"
-
-        last: Exception | None = None
-        for attempt in range(_OPEN_RETRIES):
-            try:
-                dev.open()
-                dev.visa_rsrc.timeout = _VISA_TIMEOUT_MS
-                return dev
-            except Exception as exc:  # noqa: BLE001 - retry any transport error
-                last = exc
-                time.sleep(1.0 + attempt)
-        raise ConnectionError(
-            f"failed to open VISA resource {resource!r} after {_OPEN_RETRIES} "
-            f"attempts: {last}"
-        ) from last
+        self._ieee = ieee
+        self._measure = measure
+        self._acquire = acquire
+        self._channel = channel
+        self._timebase = timebase
+        self._trigger = trigger
+        self._waveform = waveform
 
     # -- identity ----------------------------------------------------------
     def identify(self) -> InstrumentIdentity:
-        # Clean library path over *IDN? (the ``ieee`` helper always queries it).
-        raw = self._dev.ieee().idn
-        vendor, model, serial, firmware = (
-            part.strip() for part in (raw.split(",", 3) + ["", "", "", ""])[:4]
-        )
+        idn = self._ieee(self._dev).idn  # "RIGOL TECHNOLOGIES,DS1104Z,<sn>,<fw>"
+        parts = [p.strip() for p in str(idn).split(",")]
+        parts += [""] * (4 - len(parts))
         return InstrumentIdentity(
-            vendor=vendor, model=model, serial=serial, firmware=firmware
+            vendor=parts[0],
+            model=parts[1],
+            serial=parts[2],
+            firmware=parts[3],
         )
 
     def close(self) -> None:
-        self._dev.close()
+        try:
+            self._dev.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
 
     # -- measurement -------------------------------------------------------
     def measure(self, channel: int, kind: MeasurementKind) -> Measurement:
-        self._require_channel(channel)
-        item = _MEASURE_ITEM[kind]
-        value = self._dev.measure(source=channel, item=item).value
-        if value is None or math.isnan(value) or abs(value) >= _RIGOL_INVALID:
-            value = math.nan  # invalid / unavailable measurement
-        elif kind is MeasurementKind.DUTY:
-            # The scope reports duty as a 0–1 ratio; surface it as a percent to
-            # match the "%" unit (and the mock backend).
-            value *= 100.0
+        item, unit = _ITEM[kind]
+        result = self._measure(self._dev, source=channel, item=item)
         return Measurement(
-            channel=channel, kind=kind, value=float(value), unit=_MEASURE_UNIT[kind]
+            channel=channel, kind=kind, value=float(result.value), unit=unit
         )
 
     # -- capture -----------------------------------------------------------
-    def capture_screen(self, channel: int) -> Waveform:
-        self._require_channel(channel)
-        wf = self._dev.waveform(source=channel, mode="NORM", format="BYTE")
-        x, y = self._lib.process_waveform(wf)
-        return self._to_waveform(channel, wf, x, y, source="screen")
-
-    def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
-        self._require_channel(channel)
-        # Deep-memory (RAW) reads require the scope to be stopped.
-        self._dev.stop()
-        # Read the full acquisition memory unless a point count is requested.
-        if points is None:
-            depth = self._dev.acquire().memdepth  # :ACQ:MDEP? — int or "AUTO"
-            try:
-                points = int(depth)
-            except (TypeError, ValueError):
-                points = 12_000  # MDEP == AUTO / unknown — a sane default depth
-
-        volts: list[float] = []
-        xinc = 0.0
-        xorigin = 0.0
-        start = 1
-        # Chunk the read: the scope caps a single :WAVeform:DATA? transfer. An
-        # explicit start/stop per chunk avoids relying on a stale :WAV:STOP.
-        while len(volts) < points:
-            stop = min(start + _RAW_CHUNK - 1, points)
-            chunk = self._dev.waveform(
-                source=channel, mode="RAW", format="BYTE", start=start, stop=stop
-            )
-            _, yc = self._lib.process_waveform(chunk)
-            if len(yc) == 0:
-                break  # instrument returned nothing further; stop cleanly
-            if not volts:
-                xinc, xorigin = chunk.xincrement, chunk.xorigin
-            volts.extend(float(v) for v in yc)
-            start = len(volts) + 1
-
-        time_axis = [i * xinc + xorigin for i in range(len(volts))]
-        sample_rate = 1.0 / xinc if xinc else 0.0
+    def _read_waveform(
+        self, channel: int, mode: str, label: str, *, stop: int | None = None
+    ) -> Waveform:
+        wf = self._waveform(
+            self._dev,
+            source=channel,
+            mode=mode,
+            format="BYTE",
+            start=1 if stop else None,
+            stop=stop,
+        )
+        raw = list(wf.data or [])
+        # DS1000Z BYTE → volts: (raw - yorigin - yreference) * yincrement.
+        yinc, yorig, yref = wf.yincrement, wf.yorigin, wf.yreference
+        volts = [(b - yorig - yref) * yinc for b in raw]
+        xinc, xorig, xref = wf.xincrement, wf.xorigin, wf.xreference
+        times = [(i - xref) * xinc + xorig for i in range(len(raw))]
+        sample_rate = (1.0 / xinc) if xinc else 0.0
         return Waveform(
             channel=channel,
-            time=time_axis,
+            time=times,
             volts=volts,
             sample_rate=sample_rate,
-            source="memory",
+            source=label,
         )
 
-    def _to_waveform(self, channel: int, wf, x, y, *, source: str) -> Waveform:
-        sample_rate = 1.0 / wf.xincrement if wf.xincrement else 0.0
-        return Waveform(
-            channel=channel,
-            time=[float(t) for t in x],
-            volts=[float(v) for v in y],
-            sample_rate=sample_rate,
-            source=source,
-        )
+    def capture_screen(self, channel: int) -> Waveform:
+        return self._read_waveform(channel, mode="NORM", label="screen")
+
+    def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
+        # Deep-memory reads require a stopped acquisition on the DS1000Z.
+        self._dev.stop()
+        return self._read_waveform(channel, mode="RAW", label="memory", stop=points)
 
     # -- channel / timebase / trigger -------------------------------------
     def set_channel(
@@ -227,17 +196,14 @@ class RigolDS1000Z(Instrument):
         offset: float | None = None,
         coupling: str | None = None,
     ) -> None:
-        self._require_channel(channel)
-        kwargs: dict[str, object] = {}
-        if enabled is not None:
-            kwargs["display"] = enabled
-        if scale is not None:
-            kwargs["scale"] = scale
-        if offset is not None:
-            kwargs["offset"] = offset
-        if coupling is not None:
-            kwargs["coupling"] = coupling
-        self._dev.channel(channel, **kwargs)
+        self._channel(
+            self._dev,
+            channel,
+            display=enabled,
+            scale=scale,
+            offset=offset,
+            coupling=coupling,
+        )
 
     def set_timebase(
         self,
@@ -245,23 +211,15 @@ class RigolDS1000Z(Instrument):
         scale: float | None = None,
         offset: float | None = None,
     ) -> None:
-        kwargs: dict[str, object] = {}
-        if scale is not None:
-            kwargs["main_scale"] = scale
-        if offset is not None:
-            kwargs["main_offset"] = offset
-        self._dev.timebase(**kwargs)
+        self._timebase(self._dev, main_scale=scale, main_offset=offset)
 
     def set_trigger(self, config: TriggerConfig) -> None:
-        slope = "POS" if config.slope == "rising" else "NEG"
-        # AUTO sweep keeps the scope acquiring/measuring even if the edge isn't
-        # found, which the (measurement-based) verify steps depend on.
-        self._dev.trigger(
+        self._trigger(
+            self._dev,
             mode="EDGE",
             source=config.source,
-            slope=slope,
+            slope=_SLOPE.get(config.slope, "POS"),
             level=config.level,
-            sweep="AUTO",
         )
 
     # -- acquisition control ----------------------------------------------
@@ -283,25 +241,11 @@ class RigolDS1000Z(Instrument):
         acq_type: str | None = None,
         memory_depth: int | None = None,
     ) -> None:
-        kwargs: dict[str, object] = {}
+        token = None
         if acq_type is not None:
-            kwargs["type"] = _ACQ_TYPE.get(acq_type.lower(), acq_type.upper())
-        if memory_depth is not None:
-            kwargs["memdepth"] = memory_depth
-        self._dev.acquire(**kwargs)
+            token = _ACQ_TYPE.get(acq_type.lower(), acq_type.upper()[:4])
+        self._acquire(self._dev, type=token, memdepth=memory_depth)
 
     # -- settle ------------------------------------------------------------
     def settle(self, seconds: float) -> None:
-        # Synchronize on operation-complete rather than blind-sleeping: the
-        # library's query() appends ;*WAI and *OPC? returns only once pending
-        # operations finish. Fall back to a sleep if the link hiccups.
-        try:
-            self._dev.query("*OPC?")
-        except Exception:  # noqa: BLE001 - settle must never raise
-            time.sleep(seconds)
-
-    # -- helpers -----------------------------------------------------------
-    def _require_channel(self, channel: int) -> None:
-        if channel not in self.capabilities.channel_ids():
-            valid = ", ".join(str(c) for c in self.capabilities.channel_ids())
-            raise ValueError(f"channel {channel} out of range (have: {valid})")
+        time.sleep(seconds)
