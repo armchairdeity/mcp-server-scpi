@@ -51,6 +51,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/scpi_mcp"]
 
+[tool.hatch.metadata]
+# The `hardware` extra pins the rigol-ds1000z fork by git URL (a direct
+# reference); hatchling requires this opt-in to build with it.
+allow-direct-references = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
