@@ -1,6 +1,6 @@
 [project]
 name = "scpi-mcp"
-version = "0.1.0"
+version = "1.0.0rc1"
 description = "Oscilloscope expertise for agents over MCP — a SCPI/VISA instrument interface for the Model Context Protocol."
 readme = "README.md"
 license = { text = "MIT" }
@@ -27,9 +27,8 @@ dependencies = [
 # backend is fully independent of it, so it stays optional here and the wrapper
 # guards its import. Swap the placeholder for the fork's git URL in Part 2.
 hardware = [
-    # TODO: Part 2 — point at the completed fork, e.g.
-    # "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git",
-    "rigol-ds1000z>=0.2",
+    # The complete fork with MEASure + ACQuire subsystems (Part 2/3).
+    "rigol-ds1000z @ git+https://github.com/armchairdeity/rigol-ds1000z.git@v0.4.0",
 ]
 dev = [
     "pytest>=8.0",

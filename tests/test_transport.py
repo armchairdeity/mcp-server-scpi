@@ -58,7 +58,7 @@ def test_manual_builds_tcpip_resource(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     result = discover.discover_manual("192.168.2.2")
     assert result is not None
-    assert result.resource == "TCPIP::192.168.2.2::INSTR"
+    assert result.resource == "TCPIP0::192.168.2.2::5555::SOCKET"
     assert result.source is DiscoverySource.MANUAL
 
 

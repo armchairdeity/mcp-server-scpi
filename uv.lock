@@ -1364,8 +1364,8 @@ wheels = [
 
 [[package]]
 name = "rigol-ds1000z"
-version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.4.0"
+source = { git = "https://github.com/armchairdeity/rigol-ds1000z.git?rev=v0.4.0#7c7cabd9976d02aaa453eb463c1a31bc6a37dc20" }
 dependencies = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1376,10 +1376,6 @@ dependencies = [
     { name = "pyvisa-py" },
     { name = "si-prefix" },
     { name = "textual" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/85/72/5087eb034e45fc44278533f98b63bc3e0bc2c4fe6d6708bed88278fadd39/rigol-ds1000z-0.3.0.tar.gz", hash = "sha256:eac9e84a687ba06ab3d58710e2c3a82d72f21fca292fa41aae1e159662a45b31", size = 19519, upload-time = "2022-11-20T21:25:55.213Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/cc/d07e45470433c6355dd16588553aa45734898b13f4aac165b6a440ac8eb7/rigol_ds1000z-0.3.0-py3-none-any.whl", hash = "sha256:e4e228d38d4b5cf5923ee4ef94c888d92fa823dfdf8e5a21bbbe5d7e09fb9acf", size = 24405, upload-time = "2022-11-20T21:25:56.975Z" },
 ]
 
 [[package]]
@@ -1678,7 +1674,7 @@ wheels = [
 
 [[package]]
 name = "scpi-mcp"
-version = "0.1.0"
+version = "1.0.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -1705,7 +1701,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyvisa", specifier = ">=1.13" },
     { name = "pyvisa-py", specifier = ">=0.5.3" },
-    { name = "rigol-ds1000z", marker = "extra == 'hardware'", specifier = ">=0.2" },
+    { name = "rigol-ds1000z", marker = "extra == 'hardware'", git = "https://github.com/armchairdeity/rigol-ds1000z.git?rev=v0.4.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
 provides-extras = ["hardware", "dev"]

@@ -1,23 +1,24 @@
-"""Thin wrapper over the (complete) ``rigol-ds1000z`` library.
+"""RigolDS1000Z backend — the live DS1000Z-series oscilloscope.
 
-Hard rule: **no raw-SCPI escape hatch.** Every method here calls a clean,
-named method on the library object — never a raw command string. Where the
-library subsystem is still a Part 2 gap (``MEASure``, ``ACQuire``, and the
-remainder of ``TRIGger``), the method is **stubbed** and raises
-``NotImplementedError`` with a ``# TODO: Part 2`` note. We do *not* reach around
-the library with raw SCPI to "make it work" — the fix is in the library.
+Wires the vendor-neutral :class:`Instrument` interface onto the forked
+``rigol-ds1000z`` library's subsystem functions (``ieee``, ``measure``,
+``acquire``, ``channel``, ``timebase``, ``trigger``, ``waveform``).
 
-The library is an optional dependency in Part 1 (the ``hardware`` extra). It is
-imported lazily so the package imports cleanly with zero hardware; only
-*constructing* a ``RigolDS1000Z`` requires it. Part 1 tests exercise the mock,
-not this backend.
+Hard rule preserved: **no raw-SCPI escape hatch in a tool method.** Every
+capability calls a named library subsystem function. The only raw strings live
+in the tiny transport adapter below (``_SocketOscope``), which is the transport
+seam — the equivalent of the library's own ``Rigol_DS1000Z.write/query`` — not
+the tool layer.
 
-Transport (``transport/``) resolves the VISA resource string and passes it in.
-The library accepts a VISA resource and only self-searches when none is given —
-so discovery stays entirely in our transport layer.
+Transport is a raw TCP socket (``TCPIP::<ip>::5555::SOCKET``) opened via the
+pure-python VISA backend. On the bench link VXI-11/``INSTR`` proved unreliable
+(RPC handshake stalls); the socket is fast and stable. See
+``transport/connect.py`` for construction.
 """
 
 from __future__ import annotations
+
+import time
 
 from ..capabilities import DS1104Z_BASE, Capabilities
 from .base import (
@@ -29,71 +30,161 @@ from .base import (
     Waveform,
 )
 
-_PART2 = "TODO: Part 2 — implement in the forked rigol-ds1000z library, then wire here."
+# Our vendor-neutral measurement kinds → (DS1000Z :MEASure item mnemonic, unit).
+_ITEM: dict[MeasurementKind, tuple[str, str]] = {
+    MeasurementKind.VPP: ("VPP", "V"),
+    MeasurementKind.VRMS: ("VRMS", "V"),
+    MeasurementKind.FREQUENCY: ("FREQuency", "Hz"),
+    MeasurementKind.PERIOD: ("PERiod", "s"),
+    MeasurementKind.DUTY: ("PDUTy", "%"),
+    MeasurementKind.RISE_TIME: ("RTIMe", "s"),
+    MeasurementKind.FALL_TIME: ("FTIMe", "s"),
+}
+
+# Our slope names → the library/scope tokens.
+_SLOPE = {"rising": "POS", "falling": "NEG"}
+
+# Our free-text acquisition types → :ACQuire:TYPE tokens.
+_ACQ_TYPE = {
+    "normal": "NORM",
+    "average": "AVER",
+    "peak": "PEAK",
+    "hres": "HRES",
+    "high_resolution": "HRES",
+}
 
 
-def _load_library():
-    """Import the library lazily; give an actionable error if it's absent."""
-    try:
-        import rigol_ds1000z  # type: ignore  # noqa: F401
+class _SocketOscope:
+    """Duck-typed device the library subsystem functions expect.
 
-        return rigol_ds1000z
-    except ImportError as exc:  # pragma: no cover - exercised only with hardware extra
-        raise ImportError(
-            "the 'rigol-ds1000z' library is not installed. It is delivered in "
-            "Part 2; install the 'hardware' extra (`uv sync --extra hardware`) "
-            "once the fork is available. Part 1 uses the mock backend instead."
-        ) from exc
+    Provides ``write``/``query``/``read`` over an injected pyvisa resource plus
+    the acquisition-control verbs (``run``/``stop``/``single``/``tforce``) the
+    library binds on its own device class. This is the transport primitive; it
+    is the only place raw command strings appear.
+    """
+
+    def __init__(self, visa_rsrc) -> None:
+        self.visa_rsrc = visa_rsrc
+
+    def write(self, cmd: str) -> None:
+        # Append *WAI so a subsequent read-back reflects the completed command.
+        self.visa_rsrc.write(cmd + ";*WAI")
+
+    def read(self) -> str:
+        return str(self.visa_rsrc.read()).strip()
+
+    def query(self, cmd: str, delay=None) -> str:
+        return str(self.visa_rsrc.query(cmd)).strip()
+
+    # -- acquisition-control device verbs ---------------------------------
+    def run(self) -> None:
+        self.write(":RUN")
+
+    def stop(self) -> None:
+        self.write(":STOP")
+
+    def single(self) -> None:
+        self.write(":SING")
+
+    def tforce(self) -> None:
+        self.write(":TFOR")
+
+    def close(self) -> None:
+        self.visa_rsrc.close()
 
 
 class RigolDS1000Z(Instrument):
-    """DS1000Z-series backend.
-
-    Part 1 scaffolds the structure; the methods that depend on Part 2 library
-    subsystems are stubbed. Hardware wiring + validation happen in Part 3.
-    """
+    """Live backend for a DS1000Z-series scope over the forked library."""
 
     def __init__(
         self,
-        resource: str,
+        device: _SocketOscope,
         *,
         capabilities: Capabilities = DS1104Z_BASE,
     ) -> None:
-        self.resource = resource
+        # ``device`` is an opened, duck-typed transport (see transport layer).
+        # Injected rather than opened here so this class is unit-testable with a
+        # fake device and holds no pyvisa import itself.
+        self._dev = device
         self.capabilities = capabilities
-        self._lib = _load_library()
-        # The library accepts the VISA resource string we resolved in transport
-        # and only self-searches when given none — so we keep discovery ours.
-        # TODO: Part 3 — confirm the exact constructor/method names against the
-        # completed fork's public API and adjust the calls below to match.
-        self._dev = self._lib.Rigol_DS1000Z(resource)  # type: ignore[attr-defined]
+        # Bind the library subsystem functions lazily — importing the library is
+        # only required when a live backend is actually constructed.
+        from rigol_ds1000z.src.acquire import acquire
+        from rigol_ds1000z.src.channel import channel
+        from rigol_ds1000z.src.ieee import ieee
+        from rigol_ds1000z.src.measure import measure
+        from rigol_ds1000z.src.timebase import timebase
+        from rigol_ds1000z.src.trigger import trigger
+        from rigol_ds1000z.src.waveform import waveform
+
+        self._ieee = ieee
+        self._measure = measure
+        self._acquire = acquire
+        self._channel = channel
+        self._timebase = timebase
+        self._trigger = trigger
+        self._waveform = waveform
 
     # -- identity ----------------------------------------------------------
     def identify(self) -> InstrumentIdentity:
-        idn = self._dev.idn  # clean library property over *IDN?
+        idn = self._ieee(self._dev).idn  # "RIGOL TECHNOLOGIES,DS1104Z,<sn>,<fw>"
+        parts = [p.strip() for p in str(idn).split(",")]
+        parts += [""] * (4 - len(parts))
         return InstrumentIdentity(
-            vendor=idn.vendor,
-            model=idn.model,
-            serial=idn.serial,
-            firmware=idn.firmware,
+            vendor=parts[0],
+            model=parts[1],
+            serial=parts[2],
+            firmware=parts[3],
         )
 
     def close(self) -> None:
-        self._dev.close()
+        try:
+            self._dev.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
 
-    # -- measurement (MEASure — Part 2 gap, highest priority) -------------
+    # -- measurement -------------------------------------------------------
     def measure(self, channel: int, kind: MeasurementKind) -> Measurement:
-        # The :MEASure subsystem is not yet implemented in the library.
-        raise NotImplementedError(f"measure() — {_PART2}")
+        item, unit = _ITEM[kind]
+        result = self._measure(self._dev, source=channel, item=item)
+        return Measurement(
+            channel=channel, kind=kind, value=float(result.value), unit=unit
+        )
 
     # -- capture -----------------------------------------------------------
+    def _read_waveform(
+        self, channel: int, mode: str, label: str, *, stop: int | None = None
+    ) -> Waveform:
+        wf = self._waveform(
+            self._dev,
+            source=channel,
+            mode=mode,
+            format="BYTE",
+            start=1 if stop else None,
+            stop=stop,
+        )
+        raw = list(wf.data or [])
+        # DS1000Z BYTE → volts: (raw - yorigin - yreference) * yincrement.
+        yinc, yorig, yref = wf.yincrement, wf.yorigin, wf.yreference
+        volts = [(b - yorig - yref) * yinc for b in raw]
+        xinc, xorig, xref = wf.xincrement, wf.xorigin, wf.xreference
+        times = [(i - xref) * xinc + xorig for i in range(len(raw))]
+        sample_rate = (1.0 / xinc) if xinc else 0.0
+        return Waveform(
+            channel=channel,
+            time=times,
+            volts=volts,
+            sample_rate=sample_rate,
+            source=label,
+        )
+
     def capture_screen(self, channel: int) -> Waveform:
-        # :WAVeform is implemented in the upstream library; mapping its return
-        # onto our Waveform type is Part 3 wiring (needs a live read to verify).
-        raise NotImplementedError("capture_screen() — wiring deferred to Part 3")
+        return self._read_waveform(channel, mode="NORM", label="screen")
 
     def capture_memory(self, channel: int, points: int | None = None) -> Waveform:
-        raise NotImplementedError("capture_memory() — wiring deferred to Part 3")
+        # Deep-memory reads require a stopped acquisition on the DS1000Z.
+        self._dev.stop()
+        return self._read_waveform(channel, mode="RAW", label="memory", stop=points)
 
     # -- channel / timebase / trigger -------------------------------------
     def set_channel(
@@ -105,8 +196,14 @@ class RigolDS1000Z(Instrument):
         offset: float | None = None,
         coupling: str | None = None,
     ) -> None:
-        # :CHANnel exists upstream; wiring/verification is Part 3.
-        raise NotImplementedError("set_channel() — wiring deferred to Part 3")
+        self._channel(
+            self._dev,
+            channel,
+            display=enabled,
+            scale=scale,
+            offset=offset,
+            coupling=coupling,
+        )
 
     def set_timebase(
         self,
@@ -114,25 +211,29 @@ class RigolDS1000Z(Instrument):
         scale: float | None = None,
         offset: float | None = None,
     ) -> None:
-        # :TIMebase exists upstream; wiring/verification is Part 3.
-        raise NotImplementedError("set_timebase() — wiring deferred to Part 3")
+        self._timebase(self._dev, main_scale=scale, main_offset=offset)
 
     def set_trigger(self, config: TriggerConfig) -> None:
-        # :TRIGger is only PARTIAL in the library today.
-        raise NotImplementedError(f"set_trigger() — {_PART2}")
+        self._trigger(
+            self._dev,
+            mode="EDGE",
+            source=config.source,
+            slope=_SLOPE.get(config.slope, "POS"),
+            level=config.level,
+        )
 
-    # -- acquisition control (ACQuire — Part 2 gap) -----------------------
+    # -- acquisition control ----------------------------------------------
     def run(self) -> None:
-        raise NotImplementedError(f"run() — {_PART2}")
+        self._dev.run()
 
     def stop(self) -> None:
-        raise NotImplementedError(f"stop() — {_PART2}")
+        self._dev.stop()
 
     def single(self) -> None:
-        raise NotImplementedError(f"single() — {_PART2}")
+        self._dev.single()
 
     def force_trigger(self) -> None:
-        raise NotImplementedError(f"force_trigger() — {_PART2}")
+        self._dev.tforce()
 
     def set_acquisition(
         self,
@@ -140,14 +241,11 @@ class RigolDS1000Z(Instrument):
         acq_type: str | None = None,
         memory_depth: int | None = None,
     ) -> None:
-        # The :ACQuire subsystem is not yet implemented in the library.
-        raise NotImplementedError(f"set_acquisition() — {_PART2}")
+        token = None
+        if acq_type is not None:
+            token = _ACQ_TYPE.get(acq_type.lower(), acq_type.upper()[:4])
+        self._acquire(self._dev, type=token, memdepth=memory_depth)
 
     # -- settle ------------------------------------------------------------
     def settle(self, seconds: float) -> None:
-        # The library already inserts sleeps on reset/autoscale; this adds the
-        # extra post-config settle the flagship loop needs. Real wait in Part 3.
-        # TODO: Part 3 — back this with the library's own wait/opc helper.
-        import time
-
         time.sleep(seconds)

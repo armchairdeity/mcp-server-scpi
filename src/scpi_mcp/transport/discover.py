@@ -55,7 +55,9 @@ def _resource_manager():
     """
     import pyvisa  # local import: no hard dependency at module load
 
-    return pyvisa.ResourceManager()
+    # Pure-python backend: no NI-VISA needed, and it drives the raw socket the
+    # bench link relies on.
+    return pyvisa.ResourceManager("@py")
 
 
 def _probe_idn(resource: str, timeout_ms: int = 2000) -> str | None:
@@ -68,6 +70,8 @@ def _probe_idn(resource: str, timeout_ms: int = 2000) -> str | None:
     try:
         dev = rm.open_resource(resource)
         dev.timeout = timeout_ms
+        dev.read_termination = "\n"
+        dev.write_termination = "\n"
         try:
             return str(dev.query("*IDN?")).strip()
         finally:
@@ -114,8 +118,8 @@ def discover_lan(timeout: float = LAN_DISCOVERY_TIMEOUT) -> DiscoveryResult | No
 
 
 def discover_manual(host: str) -> DiscoveryResult | None:
-    """Build ``TCPIP::<host>::INSTR`` and confirm it answers ``*IDN?``."""
-    resource = f"TCPIP::{host}::INSTR"
+    """Build a raw-socket resource for ``host`` and confirm it answers ``*IDN?``."""
+    resource = f"TCPIP0::{host}::5555::SOCKET"
     idn = _probe_idn(resource)
     if idn and _RIGOL_IDN_RE.search(idn):
         return DiscoveryResult(

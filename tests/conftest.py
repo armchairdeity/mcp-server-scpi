@@ -8,6 +8,17 @@ from scpi_mcp.config import PermissionTier, Session
 from scpi_mcp.instruments.mock import MockInstrument
 
 
+@pytest.fixture(autouse=True)
+def _force_mock_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hardware safety net: no test may touch a real scope.
+
+    The transport default backend factory now builds a live ``RigolDS1000Z``
+    unless ``SCPI_MCP_MOCK`` is set, so force it on for the whole suite. Tests
+    that exercise the live backend do so directly with a fake device.
+    """
+    monkeypatch.setenv("SCPI_MCP_MOCK", "1")
+
+
 @pytest.fixture
 def mock_instrument() -> MockInstrument:
     return MockInstrument()
