@@ -18,6 +18,7 @@ dependencies = [
     "numpy>=1.24",
     # XLSX export.
     "openpyxl>=3.1",
+    "pyvisa-py>=0.5.3",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +40,7 @@ dev = [
 
 [project.scripts]
 scpi-mcp = "scpi_mcp.server:main"
+scpictl = "scpi_mcp.cli.main:main"
 
 [build-system]
 requires = ["hatchling"]
