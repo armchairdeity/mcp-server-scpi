@@ -87,21 +87,38 @@ min −2.08 V.*
 
 ---
 
-### Power-on — bare coil, unclamped spike *(planned)*
+### Power-off — bare coil, no freewheel diode
 
-**The setup:** Same coil, freewheel diode removed. Series resistor between DCPS
-and coil to isolate supply capacitance. NC momentary pushbutton as the
-disconnect so the break is clean and repeatable.
+**The setup:** The same 24 V relay coil, but with the freewheel diode *removed* —
+a bare inductor. Powered from a bench supply (100 nF across the rail to tame
+switch-mode ripple). Two 10x probes straddle the disconnect on the high side:
+CH1 on the supply side, CH2 on the coil side. Power is cut by pulling the +
+lead, and a single-shot trigger catches the unclamped kickback.
 
-**Prompts to use:**
+**Prompts used:**
 
 ```
-Set a single-shot trigger on CH1 falling edge at 10 V.
-Arm it — I'm about to cut power.
-Got it. Grab the screen and tell me the peak voltage on CH1.
+Prime the scope for a single-shot on CH2 falling — I'll pull the + lead.
+We didn't clear the clipping — reset V/div on CH2 and re-arm for another one-shot.
+Got it — grab the screencap and give me the true peak.
 ```
 
-> Capture pending — will replace this note once the bench experiment runs.
+scpi-mcp armed a single-shot falling-edge trigger on CH2, watched the trigger
+status, and grabbed the screen plus both channel waveforms the instant it fired.
+This time the *scale fought back the other way*: the kick kept overflowing the
+window — it railed at ±130 V, then again at −304 V — so scpi-mcp stepped CH2
+coarser to 100 V/div until the whole transient fit. With no freewheel diode to
+absorb it, the collapsing field threw a **−436 V** spike with a **+240 V**
+overshoot — a ~676 Vpp ring, roughly **18x** the 24 V rail — then bled off
+exponentially back toward the rail over ~1 ms. Compare the clamped case above,
+where the diode held the same coil to ≈24.7 V.
+
+![Power-off capture — bare coil, freewheel diode removed](docs/images/scope_poweroff_bare_coil.png)
+
+*200 µs/div. CH1 yellow, 20 V/div: supply side holds ~24 V with a small coupled
+ring at the break. CH2 cyan, 100 V/div: bare-coil kickback — peak −436 V,
++240 V overshoot (~676 Vpp), then exponential bleed-back. No freewheel diode;
+contrast the ≈24.7 V clamped result above.*
 
 ## License
 
