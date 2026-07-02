@@ -183,9 +183,16 @@ def characterize_signal_impl(
 
         export = str(to_png(waveform, export_path))
 
+    # A confident result requires an actual signal — if the scope can't even
+    # return a valid frequency, the fit/trigger flags are meaningless (a dead or
+    # open channel must read "low", not "high").
+    freq_ok = _valid(measurements.get("frequency", {}).get("value"))
     confidence = (
         "high"
-        if vertical["fitted"] and horizontal["stable"] and trigger["triggered"]
+        if freq_ok
+        and vertical["fitted"]
+        and horizontal["stable"]
+        and trigger["triggered"]
         else "low"
     )
     return {

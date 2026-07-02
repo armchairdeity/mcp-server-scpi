@@ -165,9 +165,13 @@ class RigolDS1000Z(Instrument):
     def measure(self, channel: int, kind: MeasurementKind) -> Measurement:
         item, unit = _ITEM[kind]
         result = self._measure(self._dev, source=channel, item=item)
-        return Measurement(
-            channel=channel, kind=kind, value=float(result.value), unit=unit
-        )
+        value = float(result.value)
+        # The DS1000Z returns duty as a fraction (0.505 = 50.5%); our interface
+        # and the mock use percent. Scale valid readings to percent; leave the
+        # NaN / 9.9e37 "no measurement" sentinels untouched.
+        if kind is MeasurementKind.DUTY and value == value and abs(value) < 9e37:
+            value *= 100.0
+        return Measurement(channel=channel, kind=kind, value=value, unit=unit)
 
     # -- capture -----------------------------------------------------------
     def _read_waveform(
